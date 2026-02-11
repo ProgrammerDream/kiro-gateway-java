@@ -142,11 +142,9 @@ public class AuthService {
     private TokenRefresher createRefresher(String authMethod, JSONObject creds) {
         return switch (authMethod.toLowerCase()) {
             case "idc", "builderid" -> {
+                // clientId/clientSecret 可选，缺少时 OidcTokenRefresher 会自动注册
                 String clientId = creds.getString("clientId");
                 String clientSecret = creds.getString("clientSecret");
-                if (clientId == null || clientSecret == null) {
-                    throw new AuthenticationException("IDC/BuilderID 认证需要 clientId 和 clientSecret");
-                }
                 yield new OidcTokenRefresher(clientId, clientSecret, httpClient);
             }
             case "social" -> new SocialTokenRefresher(httpClient);
