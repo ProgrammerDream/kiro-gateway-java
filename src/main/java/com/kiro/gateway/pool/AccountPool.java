@@ -97,6 +97,30 @@ public class AccountPool {
     }
 
     /**
+     * 更新账号信息
+     */
+    public boolean updateAccount(String id, String name, String credentials, String authMethod) {
+        Account old = accounts.get(id);
+        if (old == null) return false;
+
+        // 用新信息 + 旧统计创建替换对象
+        Account updated = new Account(
+                id, name, credentials, authMethod,
+                old.status(), old.requestCount(), old.successCount(), old.errorCount(),
+                old.consecutiveErrors(), old.inputTokensTotal(), old.outputTokensTotal(),
+                old.creditsTotal(),
+                old.cooldownUntil() != null ? old.cooldownUntil().toString() : null,
+                old.lastUsedAt() != null ? old.lastUsedAt().toString() : null,
+                old.createdAt().toString()
+        );
+        accounts.put(id, updated);
+        db.updateAccountInfo(id, name, credentials, authMethod);
+        // 清除旧 token 缓存
+        log.info("更新账号: id={}, name={}", id, name);
+        return true;
+    }
+
+    /**
      * 删除账号
      */
     public boolean removeAccount(String id) {

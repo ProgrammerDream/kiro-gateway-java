@@ -36,6 +36,7 @@ export default {
   // 账号管理
   getAccounts: () => api.get('/accounts'),
   addAccount: (data) => api.post('/accounts', data),
+  updateAccount: (id, data) => api.put(`/accounts/${id}`, data),
   deleteAccount: (id) => api.delete(`/accounts/${id}`),
 
   // 请求日志

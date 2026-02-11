@@ -66,9 +66,10 @@
         <el-table-column prop="lastUsedAt" label="最后使用" width="170">
           <template #default="{ row }">{{ formatTime(row.lastUsedAt) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="140">
+        <el-table-column label="操作" width="180">
           <template #default="{ row }">
             <el-button type="primary" size="small" text @click="queryCredits(row)">额度</el-button>
+            <el-button size="small" text @click="openEdit(row)">编辑</el-button>
             <el-button type="danger" size="small" text @click="handleDelete(row.id)">删除</el-button>
           </template>
         </el-table-column>
@@ -96,6 +97,28 @@
         <el-button type="primary" @click="handleAdd">确定</el-button>
       </template>
     </el-dialog>
+
+    <el-dialog v-model="showEditDialog" title="编辑账号" width="500px">
+      <el-form :model="editForm" label-width="80px">
+        <el-form-item label="名称">
+          <el-input v-model="editForm.name" />
+        </el-form-item>
+        <el-form-item label="认证方式">
+          <el-select v-model="editForm.authMethod">
+            <el-option label="Social" value="social" />
+            <el-option label="IDC" value="idc" />
+            <el-option label="Builder ID" value="builderid" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="凭证">
+          <el-input v-model="editForm.credentials" type="textarea" :rows="6" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="showEditDialog = false">取消</el-button>
+        <el-button type="primary" @click="handleEdit">保存</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -107,6 +130,8 @@ import api from '../api/index.js'
 const accounts = ref([])
 const showAddDialog = ref(false)
 const addForm = ref({ name: '', authMethod: 'social', credentials: '' })
+const showEditDialog = ref(false)
+const editForm = ref({ id: '', name: '', authMethod: 'social', credentials: '' })
 const creditsSummary = ref(null)
 const queryingAll = ref(false)
 
@@ -173,6 +198,23 @@ async function handleAdd() {
     addForm.value = { name: '', authMethod: 'social', credentials: '' }
     await loadAccounts()
   } catch (e) { ElMessage.error('添加失败') }
+}
+
+function openEdit(row) {
+  editForm.value = { id: row.id, name: row.name, authMethod: row.authMethod, credentials: '' }
+  showEditDialog.value = true
+}
+
+async function handleEdit() {
+  let data = { name: editForm.value.name, authMethod: editForm.value.authMethod }
+  // 凭证为空则不更新
+  if (editForm.value.credentials) data.credentials = editForm.value.credentials
+  try {
+    await api.updateAccount(editForm.value.id, data)
+    ElMessage.success('更新成功')
+    showEditDialog.value = false
+    await loadAccounts()
+  } catch (e) { ElMessage.error('更新失败') }
 }
 
 async function handleDelete(id) {

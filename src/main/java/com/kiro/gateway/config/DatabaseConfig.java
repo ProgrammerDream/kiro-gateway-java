@@ -384,6 +384,23 @@ public class DatabaseConfig {
     }
 
     /**
+     * 更新账号基本信息
+     */
+    public void updateAccountInfo(String id, String name, String credentials, String authMethod) {
+        String sql = "UPDATE accounts SET name = ?, credentials = ?, auth_method = ?, updated_at = ? WHERE id = ?";
+        try (Connection conn = getConnection(); PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, name);
+            ps.setString(2, credentials);
+            ps.setString(3, authMethod);
+            ps.setString(4, Instant.now().toString());
+            ps.setString(5, id);
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            log.error("更新账号信息失败", e);
+        }
+    }
+
+    /**
      * 更新账号状态
      */
     public void updateAccountStatus(String id, String status) {

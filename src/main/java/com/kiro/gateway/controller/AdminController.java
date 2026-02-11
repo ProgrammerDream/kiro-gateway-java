@@ -130,6 +130,31 @@ public class AdminController {
         return Mono.just(JSONObject.of("success", true, "id", id).toJSONString());
     }
 
+    @PutMapping("/accounts/{id}")
+    public Mono<String> updateAccount(@PathVariable String id, @RequestBody String body) {
+        JSONObject req = JSONObject.parseObject(body);
+        String name = req.getString("name");
+        String credentials = req.getString("credentials");
+        String authMethod = req.getString("authMethod");
+
+        Account existing = accountPool.getById(id);
+        if (existing == null) {
+            return Mono.just(JSONObject.of("success", false, "message", "账号不存在").toJSONString());
+        }
+
+        // 未提供的字段保持原值
+        if (name == null) name = existing.name();
+        if (credentials == null) credentials = existing.credentials();
+        if (authMethod == null) authMethod = existing.authMethod();
+
+        boolean updated = accountPool.updateAccount(id, name, credentials, authMethod);
+        if (updated) {
+            // 清除旧 token 缓存
+            authService.clearCache(id);
+        }
+        return Mono.just(JSONObject.of("success", updated).toJSONString());
+    }
+
     @DeleteMapping("/accounts/{id}")
     public Mono<String> deleteAccount(@PathVariable String id) {
         boolean removed = accountPool.removeAccount(id);
