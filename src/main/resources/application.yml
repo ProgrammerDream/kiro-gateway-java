@@ -1,0 +1,62 @@
+server:
+  port: 8080
+
+kiro:
+  # 管理密码
+  admin-password: admin123
+  # API Key（客户端调用需要携带）
+  api-key: sk-kiro-default
+  # 是否要求 API Key
+  require-api-key: true
+
+  # AWS 区域
+  region: us-east-1
+  # Kiro 版本号
+  kiro-version: "0.8.0"
+
+  # VPN/代理设置
+  proxy:
+    enabled: false
+    url: ""
+
+  # 账号池策略: round-robin / random / least-used / smart-score
+  pool-strategy: round-robin
+
+  # 冷却配置
+  cooldown:
+    quota-minutes: 60
+    error-minutes: 1
+    error-threshold: 3
+
+  # Thinking 模式
+  thinking:
+    suffix: "-thinking"
+    output-format: "xml"
+    prompt: "<thinking_mode>enabled</thinking_mode>"
+
+  # 双端点配置
+  endpoints:
+    - "https://codewhisperer.us-east-1.amazonaws.com/generateAssistantResponse"
+    - "https://q.us-east-1.amazonaws.com/generateAssistantResponse"
+
+  # 日志持久化
+  logging:
+    file-path: data/logs
+    max-file-size: 100MB
+    max-history: 30
+    total-size-cap: 1GB
+    # 请求日志自动清理
+    request-log-retention: 100000
+    request-log-cleanup-cron: "0 0 3 * * ?"
+    # 追踪日志自动清理
+    trace-retention: 50000
+    trace-cleanup-cron: "0 0 3 * * ?"
+
+  # SQLite 数据库
+  database:
+    path: data/kiro.db
+
+  # 重试配置
+  retry:
+    max-retries: 3
+    base-delay-ms: 1000
