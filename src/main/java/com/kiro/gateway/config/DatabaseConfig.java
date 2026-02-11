@@ -122,8 +122,13 @@ public class DatabaseConfig {
 
     private void initDefaultModels(Connection conn, String now) throws SQLException {
         String[][] models = {
-                {"claude-sonnet-4-5-20250929", "Claude Sonnet 4.5", "32000"},
-                {"claude-haiku-4-5-20251001", "Claude Haiku 4.5", "32000"},
+                {"auto-kiro", "Auto (Kiro)", "32000"},
+                {"claude-sonnet-4.5", "Claude Sonnet 4.5", "32000"},
+                {"claude-sonnet-4", "Claude Sonnet 4", "32000"},
+                {"claude-haiku-4.5", "Claude Haiku 4.5", "32000"},
+                {"claude-opus-4.5", "Claude Opus 4.5", "32000"},
+                {"claude-opus-4.6", "Claude Opus 4.6", "32000"},
+                {"claude-3.7-sonnet", "Claude 3.7 Sonnet", "32000"},
         };
         try (PreparedStatement ps = conn.prepareStatement(
                 "INSERT OR IGNORE INTO models (id, display_name, max_tokens, created_at) VALUES (?, ?, ?, ?)")) {
@@ -140,11 +145,23 @@ public class DatabaseConfig {
 
     private void initDefaultMappings(Connection conn, String now) throws SQLException {
         String[][] mappings = {
-                {"sonnet", "claude-sonnet-4.5", "contains", "10"},
+                // 精确映射（高优先级）
+                {"auto", "auto-kiro", "exact", "100"},
+                {"claude-sonnet-4-5-20250929", "claude-sonnet-4.5", "exact", "100"},
+                {"claude-haiku-4-5-20251001", "claude-haiku-4.5", "exact", "100"},
+                // 模糊匹配
+                {"opus-4.6", "claude-opus-4.6", "contains", "15"},
+                {"opus-4.5", "claude-opus-4.5", "contains", "15"},
+                {"sonnet-4.5", "claude-sonnet-4.5", "contains", "12"},
+                {"sonnet-4", "claude-sonnet-4", "contains", "11"},
                 {"haiku", "claude-haiku-4.5", "contains", "10"},
-                {"opus", "claude-sonnet-4.5", "contains", "5"},
+                {"opus", "claude-opus-4.5", "contains", "5"},
+                {"sonnet", "claude-sonnet-4.5", "contains", "5"},
+                {"3.7-sonnet", "claude-3.7-sonnet", "contains", "15"},
+                {"3-7-sonnet", "claude-3.7-sonnet", "contains", "15"},
                 {"claude-3-5-sonnet", "claude-sonnet-4.5", "contains", "8"},
                 {"claude-3-5-haiku", "claude-haiku-4.5", "contains", "8"},
+                // GPT 兼容映射
                 {"gpt-4o", "claude-sonnet-4.5", "contains", "3"},
                 {"gpt-4", "claude-sonnet-4.5", "contains", "2"},
                 {"gpt-3.5", "claude-haiku-4.5", "contains", "2"},
