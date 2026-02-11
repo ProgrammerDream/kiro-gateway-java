@@ -96,10 +96,29 @@ onUnmounted(() => {
   height: calc(100vh - 160px);
   overflow-y: auto;
   font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
-  font-size: 12px;
-  background: #1e1e1e;
-  color: #d4d4d4;
+  font-size: 13px;
+  line-height: 1.6;
+  background: #0d1117;
+  color: #e6edf3;
   padding: 16px;
   border-radius: 8px;
+}
+.log-line {
+  padding: 1px 4px;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.log-line.INFO {
+  color: #58a6ff;
+}
+.log-line.WARN {
+  color: #d29922;
+}
+.log-line.ERROR {
+  color: #f85149;
+  font-weight: bold;
+}
+.log-line.DEBUG {
+  color: #8b949e;
 }
 </style>
