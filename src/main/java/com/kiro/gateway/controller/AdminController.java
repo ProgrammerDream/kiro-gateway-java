@@ -287,27 +287,31 @@ public class AdminController {
             long fileLength = raf.length();
             if (fileLength == 0) return result;
 
+            // 从文件末尾回扫，找到足够的换行符
             long pos = fileLength - 1;
             int count = 0;
-            StringBuilder sb = new StringBuilder();
-
-            while (pos >= 0 && count < lines) {
+            while (pos > 0 && count <= lines) {
                 raf.seek(pos);
-                int ch = raf.read();
-                if (ch != '\n') {
-                    sb.append((char) ch);
-                    pos--;
-                    continue;
-                }
-                if (!sb.isEmpty()) {
-                    result.add(0, sb.reverse().toString());
-                    sb.setLength(0);
+                if (raf.read() == '\n') {
                     count++;
                 }
                 pos--;
             }
-            if (!sb.isEmpty() && count < lines) {
-                result.add(0, sb.reverse().toString());
+
+            // 定位到起始读取位置
+            long startPos = (count > lines) ? pos + 2 : 0;
+            raf.seek(startPos);
+            int bytesToRead = (int) (fileLength - startPos);
+            byte[] buf = new byte[bytesToRead];
+            raf.readFully(buf);
+
+            // UTF-8 解码后按行分割
+            String content = new String(buf, java.nio.charset.StandardCharsets.UTF_8);
+            String[] splitLines = content.split("\n", -1);
+            for (String line : splitLines) {
+                if (!line.isEmpty()) {
+                    result.add(line);
+                }
             }
         } catch (Exception e) {
             log.warn("读取日志文件失败: {}", e.getMessage());
