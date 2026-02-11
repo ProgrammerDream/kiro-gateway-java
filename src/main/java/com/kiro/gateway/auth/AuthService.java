@@ -119,12 +119,6 @@ public class AuthService {
             region = properties.getRegion();
         }
 
-        // 凭证中的 authMethod 优先（KTM 导出格式）
-        String credAuthMethod = creds.getString("authMethod");
-        if (credAuthMethod != null && !credAuthMethod.isEmpty()) {
-            authMethod = credAuthMethod;
-        }
-
         TokenRefresher refresher = createRefresher(authMethod, creds);
         TokenRefresher.TokenResult result = refresher.refresh(refreshToken, region);
 
