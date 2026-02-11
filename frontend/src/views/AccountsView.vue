@@ -2,28 +2,73 @@
   <div>
     <div class="page-header" style="display:flex;justify-content:space-between;align-items:center">
       <h1>账号管理</h1>
-      <el-button type="primary" @click="showAddDialog = true">添加账号</el-button>
+      <div style="display:flex;gap:8px">
+        <el-button @click="queryAllCredits" :loading="queryingAll">查询全部额度</el-button>
+        <el-button type="primary" @click="showAddDialog = true">添加账号</el-button>
+      </div>
     </div>
+
+    <!-- Credits 汇总卡片 -->
+    <div v-if="creditsSummary" class="content-card" style="margin-bottom:16px">
+      <div style="display:flex;gap:32px;align-items:center">
+        <div>
+          <span style="color:#909399;font-size:13px">总额度</span>
+          <div style="font-size:20px;font-weight:bold;color:#409eff">{{ creditsSummary.totalLimit?.toFixed(2) }}</div>
+        </div>
+        <div>
+          <span style="color:#909399;font-size:13px">已使用</span>
+          <div style="font-size:20px;font-weight:bold;color:#e6a23c">{{ creditsSummary.totalUsed?.toFixed(2) }}</div>
+        </div>
+        <div>
+          <span style="color:#909399;font-size:13px">剩余</span>
+          <div style="font-size:20px;font-weight:bold;color:#67c23a">{{ creditsSummary.totalAvailable?.toFixed(2) }}</div>
+        </div>
+        <div style="flex:1">
+          <el-progress
+            :percentage="creditsSummary.totalLimit > 0 ? Math.min(100, (creditsSummary.totalUsed / creditsSummary.totalLimit * 100)) : 0"
+            :stroke-width="16"
+            :color="progressColor(creditsSummary.totalUsed, creditsSummary.totalLimit)"
+          />
+        </div>
+      </div>
+    </div>
+
     <div class="content-card">
       <el-table :data="accounts" stripe style="width: 100%">
-        <el-table-column prop="name" label="名称" width="150" />
-        <el-table-column prop="authMethod" label="认证方式" width="100" />
-        <el-table-column prop="status" label="状态" width="100">
+        <el-table-column prop="name" label="名称" width="130" />
+        <el-table-column prop="authMethod" label="认证" width="80" />
+        <el-table-column prop="status" label="状态" width="80">
           <template #default="{ row }">
             <el-tag :type="row.status === 'active' ? 'success' : 'danger'" size="small">{{ row.status }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="requestCount" label="请求数" width="80" />
-        <el-table-column prop="successCount" label="成功" width="80" />
-        <el-table-column prop="errorCount" label="错误" width="80" />
-        <el-table-column prop="creditsTotal" label="Credits" width="100">
+        <el-table-column label="额度 (总/已用/剩余)" min-width="240">
+          <template #default="{ row }">
+            <div v-if="row._credits">
+              <span style="color:#409eff">{{ row._credits.usageLimit?.toFixed(2) }}</span>
+              <span style="color:#909399"> / </span>
+              <span style="color:#e6a23c">{{ row._credits.currentUsage?.toFixed(2) }}</span>
+              <span style="color:#909399"> / </span>
+              <span style="color:#67c23a">{{ row._credits.available?.toFixed(2) }}</span>
+              <span v-if="row._credits.subscriptionType" style="margin-left:8px">
+                <el-tag size="small" type="info">{{ row._credits.subscriptionType }}</el-tag>
+              </span>
+            </div>
+            <span v-else-if="row._creditsLoading" style="color:#909399">查询中...</span>
+            <span v-else-if="row._creditsError" style="color:#f56c6c">{{ row._creditsError }}</span>
+            <span v-else style="color:#c0c4cc">-</span>
+          </template>
+        </el-table-column>
+        <el-table-column prop="requestCount" label="请求" width="70" />
+        <el-table-column prop="creditsTotal" label="已消耗" width="90">
           <template #default="{ row }">{{ row.creditsTotal?.toFixed(4) }}</template>
         </el-table-column>
-        <el-table-column prop="lastUsedAt" label="最后使用" width="180">
+        <el-table-column prop="lastUsedAt" label="最后使用" width="170">
           <template #default="{ row }">{{ formatTime(row.lastUsedAt) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="100">
+        <el-table-column label="操作" width="140">
           <template #default="{ row }">
+            <el-button type="primary" size="small" text @click="queryCredits(row)">额度</el-button>
             <el-button type="danger" size="small" text @click="handleDelete(row.id)">删除</el-button>
           </template>
         </el-table-column>
@@ -62,9 +107,62 @@ import api from '../api/index.js'
 const accounts = ref([])
 const showAddDialog = ref(false)
 const addForm = ref({ name: '', authMethod: 'social', credentials: '' })
+const creditsSummary = ref(null)
+const queryingAll = ref(false)
 
 async function loadAccounts() {
   try { accounts.value = await api.getAccounts() } catch (e) { console.error(e) }
+}
+
+async function queryCredits(row) {
+  row._creditsLoading = true
+  row._credits = null
+  row._creditsError = null
+  try {
+    let res = await api.getAccountCredits(row.id)
+    if (res.error) {
+      row._creditsError = res.error
+    } else {
+      row._credits = res
+    }
+  } catch (e) {
+    row._creditsError = '查询失败'
+  } finally {
+    row._creditsLoading = false
+  }
+}
+
+async function queryAllCredits() {
+  queryingAll.value = true
+  try {
+    let res = await api.getCreditsSummary()
+    creditsSummary.value = res
+    // 将每个账号的 credits 回填到表格
+    if (res.accounts) {
+      for (let item of res.accounts) {
+        let row = accounts.value.find(a => a.id === item.id)
+        if (row) {
+          if (item.error) {
+            row._creditsError = item.error
+          } else {
+            row._credits = item
+          }
+        }
+      }
+    }
+  } catch (e) {
+    ElMessage.error('查询额度失败')
+  } finally {
+    queryingAll.value = false
+  }
+}
+
+function progressColor(used, limit) {
+  if (limit <= 0) return '#909399'
+  let pct = used / limit * 100
+  if (pct >= 90) return '#f56c6c'
+  if (pct >= 70) return '#e6a23c'
+  return '#67c23a'
 }
 
 async function handleAdd() {

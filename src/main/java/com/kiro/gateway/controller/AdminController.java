@@ -2,11 +2,13 @@ package com.kiro.gateway.controller;
 
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
+import com.kiro.gateway.auth.AuthService;
 import com.kiro.gateway.config.AppProperties;
 import com.kiro.gateway.config.DatabaseConfig;
 import com.kiro.gateway.model.ModelResolver;
 import com.kiro.gateway.pool.Account;
 import com.kiro.gateway.pool.AccountPool;
+import com.kiro.gateway.proxy.KiroRestApi;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.MediaType;
@@ -37,17 +39,22 @@ public class AdminController {
     private final DatabaseConfig db;
     private final AppProperties properties;
     private final ModelResolver modelResolver;
+    private final AuthService authService;
+    private final KiroRestApi kiroRestApi;
 
     // SSE 事件推送
     private final Sinks.Many<ServerSentEvent<String>> eventSink =
             Sinks.many().multicast().onBackpressureBuffer(256);
 
     public AdminController(AccountPool accountPool, DatabaseConfig db,
-                           AppProperties properties, ModelResolver modelResolver) {
+                           AppProperties properties, ModelResolver modelResolver,
+                           AuthService authService, KiroRestApi kiroRestApi) {
         this.accountPool = accountPool;
         this.db = db;
         this.properties = properties;
         this.modelResolver = modelResolver;
+        this.authService = authService;
+        this.kiroRestApi = kiroRestApi;
     }
 
     // ==================== 登录 ====================
@@ -257,6 +264,75 @@ public class AdminController {
         return eventSink.asFlux()
                 .mergeWith(Flux.interval(Duration.ofSeconds(30))
                         .map(t -> ServerSentEvent.<String>builder().comment("heartbeat").build()));
+    }
+
+    // ==================== Credits 查询 ====================
+
+    @GetMapping("/accounts/{id}/credits")
+    public Mono<String> getAccountCredits(@PathVariable String id) {
+        return Mono.fromCallable(() -> {
+            Account account = accountPool.getById(id);
+            if (account == null) {
+                return JSONObject.of("error", "账号不存在").toJSONString();
+            }
+            try {
+                String accessToken = authService.getAccessToken(id, account.credentials(), account.authMethod());
+                KiroRestApi.UsageLimits limits = kiroRestApi.getUsageLimits(accessToken);
+                if (limits == null) {
+                    return JSONObject.of("error", "查询失败，请检查账号状态").toJSONString();
+                }
+                return JSONObject.of( //
+                        "usageLimit", limits.usageLimit(), //
+                        "currentUsage", limits.currentUsage(), //
+                        "available", limits.available(), //
+                        "userEmail", limits.userEmail(), //
+                        "subscriptionType", limits.subscriptionType() //
+                ).toJSONString();
+            } catch (Exception e) {
+                log.warn("查询账号 credits 失败: id={}, error={}", id, e.getMessage());
+                return JSONObject.of("error", "查询失败: " + e.getMessage()).toJSONString();
+            }
+        });
+    }
+
+    @GetMapping("/credits/summary")
+    public Mono<String> getCreditsSummary() {
+        return Mono.fromCallable(() -> {
+            List<Account> accounts = accountPool.listAccounts();
+            JSONArray arr = new JSONArray();
+            double totalLimit = 0;
+            double totalUsed = 0;
+
+            for (Account account : accounts) {
+                JSONObject item = JSONObject.of("id", account.id(), "name", account.name());
+                try {
+                    String accessToken = authService.getAccessToken(account.id(), account.credentials(), account.authMethod());
+                    KiroRestApi.UsageLimits limits = kiroRestApi.getUsageLimits(accessToken);
+                    if (limits != null) {
+                        item.put("usageLimit", limits.usageLimit());
+                        item.put("currentUsage", limits.currentUsage());
+                        item.put("available", limits.available());
+                        item.put("userEmail", limits.userEmail());
+                        item.put("subscriptionType", limits.subscriptionType());
+                        totalLimit += limits.usageLimit();
+                        totalUsed += limits.currentUsage();
+                    } else {
+                        item.put("error", "查询失败");
+                    }
+                } catch (Exception e) {
+                    log.warn("查询账号 credits 失败: id={}, error={}", account.id(), e.getMessage());
+                    item.put("error", e.getMessage());
+                }
+                arr.add(item);
+            }
+
+            JSONObject result = new JSONObject();
+            result.put("accounts", arr);
+            result.put("totalLimit", totalLimit);
+            result.put("totalUsed", totalUsed);
+            result.put("totalAvailable", Math.max(0, totalLimit - totalUsed));
+            return result.toJSONString();
+        });
     }
 
     // ==================== API Key 管理 ====================

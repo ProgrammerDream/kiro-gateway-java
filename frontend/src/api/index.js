@@ -52,4 +52,8 @@ export default {
 
   // API Keys
   getApiKeys: () => api.get('/api-keys'),
+
+  // Credits 查询
+  getAccountCredits: (id) => api.get(`/accounts/${id}/credits`),
+  getCreditsSummary: () => api.get('/credits/summary'),
 }
