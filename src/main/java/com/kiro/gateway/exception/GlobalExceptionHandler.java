@@ -8,6 +8,7 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.server.ResponseStatusException;
 
 /**
  * 全局异常处理器
@@ -39,6 +40,18 @@ public class GlobalExceptionHandler {
     public ResponseEntity<String> handleGateway(KiroGatewayException e) {
         log.error("网关异常: {}", e.getMessage(), e);
         return buildErrorResponse(e.getStatusCode(), "gateway_error", e.getMessage());
+    }
+
+    @ExceptionHandler(ResponseStatusException.class)
+    public ResponseEntity<String> handleResponseStatus(ResponseStatusException e) {
+        int statusCode = e.getStatusCode().value();
+        if (statusCode == 404) {
+            log.warn("路由未找到: {}", e.getReason());
+        }
+        if (statusCode != 404) {
+            log.warn("HTTP 状态异常: {} {}", statusCode, e.getReason());
+        }
+        return buildErrorResponse(statusCode, "not_found_error", e.getReason());
     }
 
     @ExceptionHandler(Exception.class)
