@@ -176,10 +176,11 @@ public class AuthService {
     private TokenRefresher createRefresher(String authMethod, JSONObject creds) {
         return switch (authMethod.toLowerCase()) {
             case "idc", "builderid" -> {
-                // clientId/clientSecret 可选，缺少时 OidcTokenRefresher 会自动注册
                 String clientId = creds.getString("clientId");
                 String clientSecret = creds.getString("clientSecret");
-                yield new OidcTokenRefresher(clientId, clientSecret, httpClient);
+                // clientIdHash 用于从 Kiro IDE 本地缓存查找 clientId/clientSecret
+                String clientIdHash = creds.getString("clientIdHash");
+                yield new OidcTokenRefresher(clientId, clientSecret, clientIdHash, httpClient);
             }
             case "social" -> new SocialTokenRefresher(httpClient);
             default -> throw new AuthenticationException("不支持的认证方式: " + authMethod);
