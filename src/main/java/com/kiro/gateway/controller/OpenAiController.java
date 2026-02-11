@@ -141,14 +141,14 @@ public class OpenAiController {
                 kiroClient.callStream(payload, accessToken, traceCtx, new StreamCallback() {
                     @Override
                     public void onText(String text) {
-                        if (thinkingParser != null) {
-                            ThinkingParser.ParseResult parsed = thinkingParser.feed(text);
-                            // thinking 内容暂不输出（OpenAI 格式不支持）
-                            if (parsed.hasContent()) {
-                                emitChunk(sink, resolved.requestedModel(), parsed.contentDelta(), null, null);
-                            }
-                        } else {
+                        if (thinkingParser == null) {
                             emitChunk(sink, resolved.requestedModel(), text, null, null);
+                            return;
+                        }
+                        ThinkingParser.ParseResult parsed = thinkingParser.feed(text);
+                        // thinking 内容暂不输出（OpenAI 格式不支持）
+                        if (parsed.hasContent()) {
+                            emitChunk(sink, resolved.requestedModel(), parsed.contentDelta(), null, null);
                         }
                     }
 
@@ -254,13 +254,13 @@ public class OpenAiController {
             kiroClient.callStream(payload, accessToken, traceCtx, new StreamCallback() {
                 @Override
                 public void onText(String text) {
-                    if (thinkingParser != null) {
-                        ThinkingParser.ParseResult parsed = thinkingParser.feed(text);
-                        if (parsed.hasContent()) {
-                            contentBuilder.append(parsed.contentDelta());
-                        }
-                    } else {
+                    if (thinkingParser == null) {
                         contentBuilder.append(text);
+                        return;
+                    }
+                    ThinkingParser.ParseResult parsed = thinkingParser.feed(text);
+                    if (parsed.hasContent()) {
+                        contentBuilder.append(parsed.contentDelta());
                     }
                 }
 

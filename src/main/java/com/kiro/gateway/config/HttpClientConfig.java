@@ -27,8 +27,8 @@ public class HttpClientConfig {
                 .version(HttpClient.Version.HTTP_1_1);
 
         // 代理配置
-        if (properties.proxy().enabled() && properties.proxy().url() != null && !properties.proxy().url().isEmpty()) {
-            String proxyUrl = properties.proxy().url();
+        if (properties.getProxy().isEnabled() && properties.getProxy().getUrl() != null && !properties.getProxy().getUrl().isEmpty()) {
+            String proxyUrl = properties.getProxy().getUrl();
             try {
                 java.net.URI uri = java.net.URI.create(proxyUrl);
                 String host = uri.getHost();

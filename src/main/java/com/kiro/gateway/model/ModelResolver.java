@@ -66,7 +66,7 @@ public class ModelResolver {
         // 检查是否启用 thinking 模式
         boolean isThinking = false;
         String cleanModel = externalModel;
-        String thinkingSuffix = properties.thinking().suffix();
+        String thinkingSuffix = properties.getThinking().getSuffix();
         if (cleanModel.endsWith(thinkingSuffix)) {
             isThinking = true;
             cleanModel = cleanModel.substring(0, cleanModel.length() - thinkingSuffix.length());

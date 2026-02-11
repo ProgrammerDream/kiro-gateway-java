@@ -37,7 +37,7 @@ public class DatabaseConfig {
 
     @PostConstruct
     public void init() {
-        String dbPath = properties.database().path();
+        String dbPath = properties.getDatabase().getPath();
         Path parent = Path.of(dbPath).getParent();
         if (parent != null && !Files.exists(parent)) {
             try {
@@ -96,8 +96,8 @@ public class DatabaseConfig {
             // 初始化设置（如不存在）
             try (PreparedStatement ps = conn.prepareStatement(
                     "INSERT OR IGNORE INTO settings (id, admin_password, pool_strategy, created_at, updated_at) VALUES (1, ?, ?, ?, ?)")) {
-                ps.setString(1, properties.adminPassword());
-                ps.setString(2, properties.poolStrategy());
+                ps.setString(1, properties.getAdminPassword());
+                ps.setString(2, properties.getPoolStrategy());
                 ps.setString(3, now);
                 ps.setString(4, now);
                 ps.executeUpdate();
@@ -106,7 +106,7 @@ public class DatabaseConfig {
             // 初始化默认 API Key（如不存在）
             try (PreparedStatement ps = conn.prepareStatement(
                     "INSERT OR IGNORE INTO api_keys (key, name, created_at) VALUES (?, ?, ?)")) {
-                ps.setString(1, properties.apiKey());
+                ps.setString(1, properties.getApiKey());
                 ps.setString(2, "默认密钥");
                 ps.setString(3, now);
                 ps.executeUpdate();

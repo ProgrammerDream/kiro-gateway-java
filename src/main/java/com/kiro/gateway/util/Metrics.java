@@ -67,11 +67,7 @@ public class Metrics {
                                int inputTokens, int outputTokens) {
         increment("requests_total");
         increment("requests_" + apiType);
-        if (success) {
-            increment("requests_success");
-        } else {
-            increment("requests_error");
-        }
+        increment(success ? "requests_success" : "requests_error");
         add("tokens_input_total", inputTokens);
         add("tokens_output_total", outputTokens);
         recordLatency("request_latency", latencyMs);

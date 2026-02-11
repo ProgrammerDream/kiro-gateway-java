@@ -44,7 +44,7 @@ public class ApiKeyFilter implements WebFilter {
         }
 
         // 不要求 API Key 时跳过
-        if (!properties.requireApiKey()) {
+        if (!properties.isRequireApiKey()) {
             return chain.filter(exchange);
         }
 

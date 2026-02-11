@@ -1,8 +1,11 @@
 package com.kiro.gateway.exception;
 
+import lombok.Getter;
+
 /**
  * Kiro API 调用异常
  */
+@Getter
 public class KiroApiException extends KiroGatewayException {
 
     private final String responseBody;
@@ -17,15 +20,11 @@ public class KiroApiException extends KiroGatewayException {
         this.responseBody = responseBody;
     }
 
-    public String responseBody() {
-        return responseBody;
-    }
-
     public boolean isRateLimit() {
-        return statusCode() == 429;
+        return getStatusCode() == 429;
     }
 
     public boolean isAuthError() {
-        return statusCode() == 401 || statusCode() == 403;
+        return getStatusCode() == 401 || getStatusCode() == 403;
     }
 }

@@ -117,13 +117,13 @@ public class EventStreamParser {
         }
 
         // 压缩剩余数据
-        if (buffer.hasRemaining()) {
-            byte[] remaining = new byte[buffer.remaining()];
-            buffer.get(remaining);
-            buffer = ByteBuffer.wrap(remaining);
-        } else {
+        if (!buffer.hasRemaining()) {
             buffer = ByteBuffer.allocate(0);
+            return;
         }
+        byte[] remaining = new byte[buffer.remaining()];
+        buffer.get(remaining);
+        buffer = ByteBuffer.wrap(remaining);
     }
 
     private void parseNestedFrame(ByteBuffer nested) {

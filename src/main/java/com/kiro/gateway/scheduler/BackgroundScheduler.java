@@ -35,7 +35,7 @@ public class BackgroundScheduler {
      */
     @Scheduled(cron = "0 0 3 * * ?")
     public void cleanupRequestLogs() {
-        int retention = properties.logging().requestLogRetention();
+        int retention = properties.getLogging().getRequestLogRetention();
         int deleted = db.cleanupRequestLogs(retention);
         if (deleted > 0) {
             log.info("清理请求日志: 删除 {} 条, 保留最近 {} 条", deleted, retention);
@@ -47,7 +47,7 @@ public class BackgroundScheduler {
      */
     @Scheduled(cron = "0 10 3 * * ?")
     public void cleanupTraces() {
-        int retention = properties.logging().traceRetention();
+        int retention = properties.getLogging().getTraceRetention();
         int deleted = db.cleanupTraces(retention);
         if (deleted > 0) {
             log.info("清理追踪日志: 删除 {} 条, 保留最近 {} 条", deleted, retention);

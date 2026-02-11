@@ -87,12 +87,10 @@ public class ClaudeTranslator implements RequestTranslator {
         }
 
         // 构建当前消息
-        String currentText;
+        String currentText = "continue";
         JSONArray allToolResults = new JSONArray();
 
-        if (endsWithAssistant) {
-            currentText = "continue";
-        } else {
+        if (!endsWithAssistant) {
             List<String> textParts = new ArrayList<>();
             for (int i = currentStart; i < messages.size(); i++) {
                 JSONObject msg = messages.getJSONObject(i);
@@ -252,12 +250,10 @@ public class ClaudeTranslator implements RequestTranslator {
             }
         }
 
-        String finalText;
+        String finalText = String.join("\n", textParts);
         if (!thinkingContent.isEmpty()) {
             String thinking = "<thinking>" + thinkingContent + "</thinking>";
-            finalText = textParts.isEmpty() ? thinking : thinking + "\n\n" + String.join("\n", textParts);
-        } else {
-            finalText = String.join("\n", textParts);
+            finalText = textParts.isEmpty() ? thinking : thinking + "\n\n" + finalText;
         }
 
         if (finalText.isEmpty() && !toolUses.isEmpty()) {

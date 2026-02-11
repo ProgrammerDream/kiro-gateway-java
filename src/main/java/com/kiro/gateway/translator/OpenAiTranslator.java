@@ -105,12 +105,10 @@ public class OpenAiTranslator implements RequestTranslator {
         }
 
         // 当前消息
-        String currentText;
+        String currentText = "continue";
         JSONArray allToolResults = new JSONArray();
 
-        if (endsWithAssistant) {
-            currentText = "continue";
-        } else {
+        if (!endsWithAssistant) {
             List<String> textParts = new ArrayList<>();
             for (int i = currentStart; i < nonSystemMsgs.size(); i++) {
                 JSONObject msg = nonSystemMsgs.get(i);
@@ -121,7 +119,8 @@ public class OpenAiTranslator implements RequestTranslator {
                     if (text != null && !text.isEmpty()) {
                         textParts.add(text);
                     }
-                } else if ("tool".equals(role)) {
+                }
+                if ("tool".equals(role)) {
                     allToolResults.add(JSONObject.of(
                             "toolUseId", msg.getString("tool_call_id"), //
                             "status", "success", //
@@ -228,11 +227,11 @@ public class OpenAiTranslator implements RequestTranslator {
             if ("tool".equals(role)) {
                 String text = extractText(msg.get("content"));
                 parts.add("[Tool Result: " + msg.getString("tool_call_id") + "] " + text);
-            } else {
-                String text = extractUserText(msg);
-                if (text != null && !text.isEmpty()) {
-                    parts.add(text);
-                }
+                continue;
+            }
+            String text = extractUserText(msg);
+            if (text != null && !text.isEmpty()) {
+                parts.add(text);
             }
         }
         return parts.isEmpty() ? "continue" : String.join("\n", parts);

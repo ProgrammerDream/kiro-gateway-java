@@ -115,7 +115,7 @@ public class AuthService {
 
         String region = creds.getString("region");
         if (region == null || region.isEmpty()) {
-            region = properties.region();
+            region = properties.getRegion();
         }
 
         TokenRefresher refresher = createRefresher(authMethod, creds);

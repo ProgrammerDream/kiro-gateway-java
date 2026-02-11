@@ -47,7 +47,7 @@ public class KiroApiClient {
      * @param callback    流式回调
      */
     public void callStream(String payload, String accessToken, TraceContext traceCtx, StreamCallback callback) {
-        List<String> endpoints = properties.endpoints();
+        List<String> endpoints = properties.getEndpoints();
 
         for (int epIdx = 0; epIdx < endpoints.size(); epIdx++) {
             String endpoint = endpoints.get(epIdx);
@@ -122,8 +122,8 @@ public class KiroApiClient {
     }
 
     private HttpRequest buildRequest(String endpoint, String payload, String accessToken) {
-        String region = properties.region();
-        String kiroVersion = properties.kiroVersion();
+        String region = properties.getRegion();
+        String kiroVersion = properties.getKiroVersion();
         String machineId = UUID.randomUUID().toString().replace("-", "");
 
         String xAmzUserAgent = "aws-sdk-js/1.0.27 KiroIDE-" + kiroVersion + "-" + machineId;

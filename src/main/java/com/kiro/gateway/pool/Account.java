@@ -120,14 +120,11 @@ public class Account {
         double baseScore = successRate * 60;
 
         // 新鲜度（权重20%）
-        double freshness;
-        if (lastUsedAt == null) {
-            freshness = 20;
-        } else {
+        double freshness = 20;
+        if (lastUsedAt != null) {
             double hoursSinceUse = (Instant.now().toEpochMilli() - lastUsedAt.toEpochMilli()) / 3600000.0;
-            if (hoursSinceUse < 1) freshness = 20;
-            else if (hoursSinceUse < 24) freshness = 15;
-            else freshness = Math.max(5, 20 - hoursSinceUse / 24);
+            if (hoursSinceUse >= 24) freshness = Math.max(5, 20 - hoursSinceUse / 24);
+            if (hoursSinceUse >= 1 && hoursSinceUse < 24) freshness = 15;
         }
 
         // 负载均衡（权重20%）

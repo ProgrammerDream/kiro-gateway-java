@@ -20,25 +20,25 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(AuthenticationException.class)
     public ResponseEntity<String> handleAuth(AuthenticationException e) {
         log.warn("认证失败: {}", e.getMessage());
-        return buildErrorResponse(e.statusCode(), "authentication_error", e.getMessage());
+        return buildErrorResponse(e.getStatusCode(), "authentication_error", e.getMessage());
     }
 
     @ExceptionHandler(NoAvailableAccountException.class)
     public ResponseEntity<String> handleNoAccount(NoAvailableAccountException e) {
         log.warn("无可用账号: {}", e.getMessage());
-        return buildErrorResponse(e.statusCode(), "overloaded_error", e.getMessage());
+        return buildErrorResponse(e.getStatusCode(), "overloaded_error", e.getMessage());
     }
 
     @ExceptionHandler(KiroApiException.class)
     public ResponseEntity<String> handleKiroApi(KiroApiException e) {
-        log.error("Kiro API 异常: status={}, body={}", e.statusCode(), e.responseBody());
-        return buildErrorResponse(e.statusCode(), "api_error", e.getMessage());
+        log.error("Kiro API 异常: status={}, body={}", e.getStatusCode(), e.getResponseBody());
+        return buildErrorResponse(e.getStatusCode(), "api_error", e.getMessage());
     }
 
     @ExceptionHandler(KiroGatewayException.class)
     public ResponseEntity<String> handleGateway(KiroGatewayException e) {
         log.error("网关异常: {}", e.getMessage(), e);
-        return buildErrorResponse(e.statusCode(), "gateway_error", e.getMessage());
+        return buildErrorResponse(e.getStatusCode(), "gateway_error", e.getMessage());
     }
 
     @ExceptionHandler(Exception.class)

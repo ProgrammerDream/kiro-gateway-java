@@ -19,8 +19,8 @@ public class RetryHandler {
     private final long baseDelayMs;
 
     public RetryHandler(AppProperties properties) {
-        this.maxRetries = properties.retry().maxRetries();
-        this.baseDelayMs = properties.retry().baseDelayMs();
+        this.maxRetries = properties.getRetry().getMaxRetries();
+        this.baseDelayMs = properties.getRetry().getBaseDelayMs();
     }
 
     /**

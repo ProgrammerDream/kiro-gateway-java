@@ -1,8 +1,11 @@
 package com.kiro.gateway.exception;
 
+import lombok.Getter;
+
 /**
  * Kiro Gateway 异常基类
  */
+@Getter
 public class KiroGatewayException extends RuntimeException {
 
     private final int statusCode;
@@ -27,7 +30,4 @@ public class KiroGatewayException extends RuntimeException {
         this.statusCode = statusCode;
     }
 
-    public int statusCode() {
-        return statusCode;
-    }
 }

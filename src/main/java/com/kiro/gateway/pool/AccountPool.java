@@ -38,7 +38,7 @@ public class AccountPool {
     @PostConstruct
     public void init() {
         // 设置选择策略
-        setStrategy(properties.poolStrategy());
+        setStrategy(properties.getPoolStrategy());
 
         // 从数据库加载账号
         List<DatabaseConfig.AccountRow> rows = db.getAllAccounts();
@@ -51,7 +51,7 @@ public class AccountPool {
             );
             accounts.put(row.id(), account);
         }
-        log.info("账号池初始化完成: {} 个账号, 策略={}", accounts.size(), properties.poolStrategy());
+        log.info("账号池初始化完成: {} 个账号, 策略={}", accounts.size(), properties.getPoolStrategy());
     }
 
     /**
@@ -130,9 +130,9 @@ public class AccountPool {
             return;
         }
         account.recordError(isRateLimit,
-                properties.cooldown().quotaMinutes(),
-                properties.cooldown().errorMinutes(),
-                properties.cooldown().errorThreshold());
+                properties.getCooldown().getQuotaMinutes(),
+                properties.getCooldown().getErrorMinutes(),
+                properties.getCooldown().getErrorThreshold());
         persistAccountStats(account);
     }
 
@@ -167,9 +167,9 @@ public class AccountPool {
                 case "active" -> {
                     if (a.cooldownUntil() != null && Instant.now().isBefore(a.cooldownUntil())) {
                         cooldown++;
-                    } else {
-                        active++;
+                        break;
                     }
+                    active++;
                 }
                 case "invalid" -> invalid++;
                 case "disabled" -> disabled++;

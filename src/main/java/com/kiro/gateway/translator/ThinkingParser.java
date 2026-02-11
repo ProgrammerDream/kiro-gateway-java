@@ -38,94 +38,99 @@ public class ThinkingParser {
         pendingBuffer.append(text);
         String pending = pendingBuffer.toString();
 
-        String thinkingDelta = null;
-        String contentDelta = null;
-
         if (inThinking) {
-            // 在 thinking 块内，查找结束标签
-            Matcher endMatcher = THINKING_END.matcher(pending);
-            if (endMatcher.find()) {
-                // 结束标签之前的部分是 thinking 内容
-                String before = pending.substring(0, endMatcher.start());
-                String after = pending.substring(endMatcher.end());
+            return feedInThinking(pending);
+        }
+        return feedOutsideThinking(pending);
+    }
 
-                if (!before.isEmpty()) {
-                    thinkingBuffer.append(before);
-                    thinkingDelta = before;
-                }
+    private ParseResult feedInThinking(String pending) {
+        // 在 thinking 块内，查找结束标签
+        Matcher endMatcher = THINKING_END.matcher(pending);
+        if (endMatcher.find()) {
+            String before = pending.substring(0, endMatcher.start());
+            String after = pending.substring(endMatcher.end());
+            String thinkingDelta = null;
+            String contentDelta = null;
 
-                inThinking = false;
-                pendingBuffer.setLength(0);
-
-                // 结束标签之后的部分是正文内容
-                if (!after.isEmpty()) {
-                    contentBuffer.append(after);
-                    contentDelta = after;
-                }
-            } else {
-                // 未找到结束标签，检查是否有部分标签在末尾
-                int safeEnd = findSafeEnd(pending, "</thinking>");
-                if (safeEnd < pending.length()) {
-                    // 末尾可能是部分标签，保留
-                    String safe = pending.substring(0, safeEnd);
-                    if (!safe.isEmpty()) {
-                        thinkingBuffer.append(safe);
-                        thinkingDelta = safe;
-                    }
-                    pendingBuffer.setLength(0);
-                    pendingBuffer.append(pending.substring(safeEnd));
-                } else {
-                    thinkingBuffer.append(pending);
-                    thinkingDelta = pending;
-                    pendingBuffer.setLength(0);
-                }
+            if (!before.isEmpty()) {
+                thinkingBuffer.append(before);
+                thinkingDelta = before;
             }
-        } else {
-            // 不在 thinking 块，查找开始标签
-            Matcher startMatcher = THINKING_START.matcher(pending);
-            if (startMatcher.find()) {
-                // 开始标签之前的部分是正文
-                String before = pending.substring(0, startMatcher.start());
-                String after = pending.substring(startMatcher.end());
-
-                if (!before.isEmpty()) {
-                    contentBuffer.append(before);
-                    contentDelta = before;
-                }
-
-                inThinking = true;
-                pendingBuffer.setLength(0);
-
-                // 递归处理剩余部分
-                if (!after.isEmpty()) {
-                    ParseResult inner = feed(after);
-                    if (inner.thinkingDelta() != null) {
-                        thinkingDelta = inner.thinkingDelta();
-                    }
-                    if (inner.contentDelta() != null) {
-                        contentDelta = contentDelta != null ? contentDelta + inner.contentDelta() : inner.contentDelta();
-                    }
-                }
-            } else {
-                // 检查末尾是否可能是部分 <thinking> 标签
-                int safeEnd = findSafeEnd(pending, "<thinking>");
-                if (safeEnd < pending.length()) {
-                    String safe = pending.substring(0, safeEnd);
-                    if (!safe.isEmpty()) {
-                        contentBuffer.append(safe);
-                        contentDelta = safe;
-                    }
-                    pendingBuffer.setLength(0);
-                    pendingBuffer.append(pending.substring(safeEnd));
-                } else {
-                    contentBuffer.append(pending);
-                    contentDelta = pending;
-                    pendingBuffer.setLength(0);
-                }
+            inThinking = false;
+            pendingBuffer.setLength(0);
+            if (!after.isEmpty()) {
+                contentBuffer.append(after);
+                contentDelta = after;
             }
+            return new ParseResult(thinkingDelta, contentDelta);
         }
 
-        return new ParseResult(thinkingDelta, contentDelta);
+        // 未找到结束标签，检查是否有部分标签在末尾
+        int safeEnd = findSafeEnd(pending, "</thinking>");
+        if (safeEnd < pending.length()) {
+            String safe = pending.substring(0, safeEnd);
+            String thinkingDelta = null;
+            if (!safe.isEmpty()) {
+                thinkingBuffer.append(safe);
+                thinkingDelta = safe;
+            }
+            pendingBuffer.setLength(0);
+            pendingBuffer.append(pending.substring(safeEnd));
+            return new ParseResult(thinkingDelta, null);
+        }
+
+        thinkingBuffer.append(pending);
+        pendingBuffer.setLength(0);
+        return new ParseResult(pending, null);
+    }
+
+    private ParseResult feedOutsideThinking(String pending) {
+        // 不在 thinking 块，查找开始标签
+        Matcher startMatcher = THINKING_START.matcher(pending);
+        if (startMatcher.find()) {
+            String before = pending.substring(0, startMatcher.start());
+            String after = pending.substring(startMatcher.end());
+            String thinkingDelta = null;
+            String contentDelta = null;
+
+            if (!before.isEmpty()) {
+                contentBuffer.append(before);
+                contentDelta = before;
+            }
+            inThinking = true;
+            pendingBuffer.setLength(0);
+
+            // 递归处理剩余部分
+            if (!after.isEmpty()) {
+                ParseResult inner = feed(after);
+                if (inner.thinkingDelta() != null) {
+                    thinkingDelta = inner.thinkingDelta();
+                }
+                if (inner.contentDelta() != null) {
+                    contentDelta = contentDelta != null ? contentDelta + inner.contentDelta() : inner.contentDelta();
+                }
+            }
+            return new ParseResult(thinkingDelta, contentDelta);
+        }
+
+        // 检查末尾是否可能是部分 <thinking> 标签
+        int safeEnd = findSafeEnd(pending, "<thinking>");
+        if (safeEnd < pending.length()) {
+            String safe = pending.substring(0, safeEnd);
+            String contentDelta = null;
+            if (!safe.isEmpty()) {
+                contentBuffer.append(safe);
+                contentDelta = safe;
+            }
+            pendingBuffer.setLength(0);
+            pendingBuffer.append(pending.substring(safeEnd));
+            return new ParseResult(null, contentDelta);
+        }
+
+        contentBuffer.append(pending);
+        pendingBuffer.setLength(0);
+        return new ParseResult(null, pending);
     }
 
     /**
@@ -142,10 +147,9 @@ public class ThinkingParser {
         if (inThinking) {
             thinkingBuffer.append(remaining);
             return new ParseResult(remaining, null);
-        } else {
-            contentBuffer.append(remaining);
-            return new ParseResult(null, remaining);
         }
+        contentBuffer.append(remaining);
+        return new ParseResult(null, remaining);
     }
 
     /**

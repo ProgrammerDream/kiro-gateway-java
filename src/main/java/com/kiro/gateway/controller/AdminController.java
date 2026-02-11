@@ -56,7 +56,7 @@ public class AdminController {
     public Mono<String> login(@RequestBody String body) {
         JSONObject req = JSONObject.parseObject(body);
         String password = req.getString("password");
-        if (properties.adminPassword().equals(password)) {
+        if (properties.getAdminPassword().equals(password)) {
             return Mono.just(JSONObject.of("success", true, "token", "admin-session").toJSONString());
         }
         return Mono.just(JSONObject.of("success", false, "message", "密码错误").toJSONString());
@@ -222,7 +222,7 @@ public class AdminController {
 
     @GetMapping("/app-logs")
     public Mono<String> getAppLogs(@RequestParam(defaultValue = "100") int lines) {
-        String logPath = properties.logging().filePath() + "/kiro-gateway.log";
+        String logPath = properties.getLogging().getFilePath() + "/kiro-gateway.log";
         File logFile = new File(logPath);
         if (!logFile.exists()) {
             return Mono.just(JSONObject.of("lines", new JSONArray()).toJSONString());
@@ -236,7 +236,7 @@ public class AdminController {
 
     @GetMapping(value = "/app-logs/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public Flux<ServerSentEvent<String>> streamAppLogs() {
-        String logPath = properties.logging().filePath() + "/kiro-gateway.log";
+        String logPath = properties.getLogging().getFilePath() + "/kiro-gateway.log";
         File logFile = new File(logPath);
 
         return Flux.interval(Duration.ofSeconds(1))
@@ -294,14 +294,15 @@ public class AdminController {
             while (pos >= 0 && count < lines) {
                 raf.seek(pos);
                 int ch = raf.read();
-                if (ch == '\n') {
-                    if (!sb.isEmpty()) {
-                        result.add(0, sb.reverse().toString());
-                        sb.setLength(0);
-                        count++;
-                    }
-                } else {
+                if (ch != '\n') {
                     sb.append((char) ch);
+                    pos--;
+                    continue;
+                }
+                if (!sb.isEmpty()) {
+                    result.add(0, sb.reverse().toString());
+                    sb.setLength(0);
+                    count++;
                 }
                 pos--;
             }

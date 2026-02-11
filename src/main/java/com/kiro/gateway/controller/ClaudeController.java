@@ -132,17 +132,17 @@ public class ClaudeController {
                 kiroClient.callStream(payload, accessToken, traceCtx, new StreamCallback() {
                     @Override
                     public void onText(String text) {
-                        if (thinkingParser != null) {
-                            ThinkingParser.ParseResult parsed = thinkingParser.feed(text);
-                            if (parsed.hasContent()) {
-                                emitEvent(sink, "content_block_delta", JSONObject.of("type", "content_block_delta", //
-                                        "index", blockIndex[0], //
-                                        "delta", JSONObject.of("type", "text_delta", "text", parsed.contentDelta())));
-                            }
-                        } else {
+                        if (thinkingParser == null) {
                             emitEvent(sink, "content_block_delta", JSONObject.of("type", "content_block_delta", //
                                     "index", blockIndex[0], //
                                     "delta", JSONObject.of("type", "text_delta", "text", text)));
+                            return;
+                        }
+                        ThinkingParser.ParseResult parsed = thinkingParser.feed(text);
+                        if (parsed.hasContent()) {
+                            emitEvent(sink, "content_block_delta", JSONObject.of("type", "content_block_delta", //
+                                    "index", blockIndex[0], //
+                                    "delta", JSONObject.of("type", "text_delta", "text", parsed.contentDelta())));
                         }
                     }
 
@@ -270,13 +270,13 @@ public class ClaudeController {
             kiroClient.callStream(payload, accessToken, traceCtx, new StreamCallback() {
                 @Override
                 public void onText(String text) {
-                    if (thinkingParser != null) {
-                        ThinkingParser.ParseResult parsed = thinkingParser.feed(text);
-                        if (parsed.hasContent()) {
-                            contentBuilder.append(parsed.contentDelta());
-                        }
-                    } else {
+                    if (thinkingParser == null) {
                         contentBuilder.append(text);
+                        return;
+                    }
+                    ThinkingParser.ParseResult parsed = thinkingParser.feed(text);
+                    if (parsed.hasContent()) {
+                        contentBuilder.append(parsed.contentDelta());
                     }
                 }
 
