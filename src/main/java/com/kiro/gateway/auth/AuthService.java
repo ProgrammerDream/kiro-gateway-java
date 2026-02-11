@@ -109,6 +109,20 @@ public class AuthService {
 
     private String doRefresh(String accountId, String credentials, String authMethod) {
         JSONObject creds = parseCredentials(credentials);
+
+        // 优先使用凭证中已有的 accessToken（KTM 导出格式包含 accessToken + expiresAt）
+        String existingToken = creds.getString("accessToken");
+        String expiresAtStr = creds.getString("expiresAt");
+        if (existingToken != null && !existingToken.isEmpty() && expiresAtStr != null) {
+            Instant expiresAt = Instant.parse(expiresAtStr);
+            if (expiresAt.isAfter(Instant.now().plusSeconds(REFRESH_THRESHOLD_SECONDS))) {
+                log.info("账号 {} 使用凭证中的 accessToken, 过期时间: {}", accountId, expiresAt);
+                tokenCache.put(accountId, new CachedToken(existingToken, expiresAt));
+                return existingToken;
+            }
+            log.debug("账号 {} 凭证中的 accessToken 已过期或即将过期: {}", accountId, expiresAt);
+        }
+
         String refreshToken = creds.getString("refreshToken");
         if (refreshToken == null || refreshToken.isEmpty()) {
             throw new AuthenticationException("账号 " + accountId + " 缺少 refreshToken");
