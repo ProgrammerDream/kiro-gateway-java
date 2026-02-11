@@ -1,5 +1,6 @@
 package com.kiro.gateway.auth;
 
+import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import com.kiro.gateway.config.AppProperties;
 import com.kiro.gateway.exception.AuthenticationException;
@@ -107,7 +108,7 @@ public class AuthService {
     }
 
     private String doRefresh(String accountId, String credentials, String authMethod) {
-        JSONObject creds = JSONObject.parseObject(credentials);
+        JSONObject creds = parseCredentials(credentials);
         String refreshToken = creds.getString("refreshToken");
         if (refreshToken == null || refreshToken.isEmpty()) {
             throw new AuthenticationException("账号 " + accountId + " 缺少 refreshToken");
@@ -116,6 +117,12 @@ public class AuthService {
         String region = creds.getString("region");
         if (region == null || region.isEmpty()) {
             region = properties.getRegion();
+        }
+
+        // 凭证中的 authMethod 优先（KTM 导出格式）
+        String credAuthMethod = creds.getString("authMethod");
+        if (credAuthMethod != null && !credAuthMethod.isEmpty()) {
+            authMethod = credAuthMethod;
         }
 
         TokenRefresher refresher = createRefresher(authMethod, creds);
@@ -137,6 +144,25 @@ public class AuthService {
 
         log.info("账号 {} Token 刷新成功, 过期时间: {}", accountId, cached.expiresAt);
         return result.accessToken();
+    }
+
+    /**
+     * 解析凭证 JSON，兼容多种格式：
+     * <p>
+     * 1. JSON 对象: {"refreshToken": "..."}
+     * <p>
+     * 2. JSON 数组: [{"refreshToken": "..."}] （KTM 导出格式）
+     */
+    private JSONObject parseCredentials(String credentials) {
+        String trimmed = credentials.trim();
+        if (trimmed.startsWith("[")) {
+            JSONArray arr = JSONArray.parseArray(trimmed);
+            if (arr == null || arr.isEmpty()) {
+                throw new AuthenticationException("凭证 JSON 数组为空");
+            }
+            return arr.getJSONObject(0);
+        }
+        return JSONObject.parseObject(trimmed);
     }
 
     private TokenRefresher createRefresher(String authMethod, JSONObject creds) {
