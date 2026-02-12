@@ -858,3 +858,72 @@ public Flux<ServerSentEvent<String>> sseEvents() {
 | `TraceStore.java` | 注入 `RequestLogDAO` / `TraceDAO` |
 | `ApiKeyFilter.java` | 注入 `ApiKeyDAO` |
 | `BackgroundScheduler.java` | 注入 `RequestLogDAO` / `TraceDAO` |
+
+---
+
+## 十四、阶段 8 变更记录（aed16db0 之后）
+
+### 8.1 协议兼容性修复
+
+#### Token 估算与块互斥保护 (`cd42a77`)
+- **Token 估算计入 thinking 内容**：之前 outputLength 只统计 text，现在也累加 thinking 输出长度
+- **块互斥保护**：thinking 和 text 不会同时输出，避免流式 SSE 事件交错
+- **移除通配导入**：替换 `import *` 为具体类导入
+- **debug 日志守卫**：`log.isDebugEnabled()` 包裹高频 debug 日志
+- **新增 `onContextUsage` 回调**：`StreamCallback` 接口新增上下文使用百分比事件
+- 涉及文件：`ClaudeController` / `OpenAiController` / `EventStreamParser` / `KiroApiClient` / `StreamCallback` / `ModelResolver` / `ClaudeTranslator` / `OpenAiTranslator`
+
+#### OpenAI 协议完善 (`1805de5`)
+- **chunk 共享 id/created**：同一次请求的所有 SSE chunk 使用相同的 `id` 和 `created` 字段
+- **最终 chunk 附带 usage**：流式结束时的 `[DONE]` 前一个 chunk 包含 `usage` 统计
+- **Anthropic message_start 补全字段**：`message_start` 事件补全 `model`、`usage` 等必需字段
+
+#### Thinking 标签解析修复 (`b18e8b2`)
+- **修复 thinking 块被 `<thinking>` 标签前空白拆分为两个块的问题**：标签前有空格/换行时不再错误地截断 thinking 内容
+
+### 8.2 管理面板增强
+
+#### 额度缓存、JSON 收缩、编辑回显 (`e15e53d`)
+- **额度缓存自动回显**：Credits 数据缓存到 `localStorage`，页面加载自动显示上次数据，按钮改为"刷新额度"
+- **JSON 树形收缩功能**：`vue-json-pretty` 添加 `collapsedOnClickBrackets` 属性，点击括号可折叠/展开
+- **编辑账号回显凭证数据**：后端 `listAccounts` 返回 `credentials` 字段，前端编辑时预填凭证
+
+### 8.3 对话记录按会话分组
+
+#### 会话分组功能 (`e3afc0b`)
+
+**方案**：后端 messages 前缀匹配（方案 B）
+
+**数据库变更**：
+- `request_logs` 表新增 `conversation_id TEXT` 列 + 索引
+- 通过 `DatabaseConfig.migrate()` 执行 `ALTER TABLE` 添加列（非 schema.sql）
+- 启动时自动回填历史数据的 `conversation_id`
+
+**后端逻辑**：
+- `TraceStore.extractConversationId()`：从 `clientRequest` JSON 提取首条 user 消息内容，与 `apiKey` 拼接后取 SHA-256 前 12 位 hex 作为 `conversation_id`
+- `RequestLogDAO` 新增：
+  - `findConversations(limit, offset)` — 按 `conversation_id` 分组，聚合轮数、时间范围、模型、账号、输入/输出 tokens、credits
+  - `findByConversationId(id)` — 查询会话内所有请求记录
+- `AdminController` 新增接口：
+  - `GET /conversations?limit=&offset=` — 会话列表（分页）
+  - `GET /conversations/{id}/messages` — 会话内消息列表
+
+**前端重构**：
+- `ConversationsView.vue` 重构为两级表格：外层会话摘要（轮数、tokens、credits 汇总），展开行显示每条请求详情
+- 点击 traceId 可跳转到对话详情页
+
+#### Schema 索引修复 (`82dccaf`)
+- 将 `CREATE INDEX idx_request_logs_conversation` 从 `schema.sql` 移到 `DatabaseConfig.migrate()` 中，避免在列不存在时创建索引报错
+- 新增 `tryExecute()` 辅助方法
+
+### 8.4 Credits 计量修复
+
+#### onCredits 回调修复 (`de74096`)
+- **根因**：4 处 `onCredits` 回调（Claude/OpenAI × 流式/非流式）均为空实现 `{}`，导致 credits 永远为 0
+- **修复**：所有回调改为 `traceCtx.recordCredits(c)`
+- `TraceContext` 新增 `recordCredits(double)` 方法
+
+#### meteringEvent 字段名修复 (`2d65f20` + `63974ef`)
+- **根因**：Kiro API 的 `meteringEvent` 实际 JSON 结构为 `{"unit":"credit","unitPlural":"credits","usage":0.14128...}`，credits 值在 **`usage`** 字段中而非 `credits`
+- **修复**：`EventStreamParser.handleMeteringEvent()` 优先读取 `usage` 字段，兼容 `credits` 字段
+- `KiroApiClient` 中 `onCredits` 回调将 metering 事件追加到 `kiroEvents`，UI 追踪详情可查看
