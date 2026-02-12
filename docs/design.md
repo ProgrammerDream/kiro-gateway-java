@@ -791,3 +791,25 @@ public Flux<ServerSentEvent<String>> sseEvents() {
 - **总计**: ~61 个文件
 
 按阶段逐步实现，每个阶段完成后可独立验证。
+
+---
+
+## 十二、界面效果图
+
+### 登录页
+![登录页](images/login.png)
+
+### 仪表盘
+![仪表盘](images/dashboard.png)
+
+### 账号管理
+![账号管理](images/accounts.png)
+
+### 对话记录
+![对话记录](images/conversations.png)
+
+### 应用日志
+![应用日志](images/app-logs.png)
+
+### 设置
+![设置](images/settings.png)
