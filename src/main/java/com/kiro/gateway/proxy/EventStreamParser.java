@@ -291,25 +291,12 @@ public class EventStreamParser {
     }
 
     private void handleMeteringEvent(JSONObject json) {
-        log.info("[METERING EVENT] raw={}", json.toJSONString());
-        // 兼容多种字段名
-        double credits = json.getDoubleValue("credits");
-        if (credits <= 0) credits = json.getDoubleValue("creditsConsumed");
-        if (credits <= 0) credits = json.getDoubleValue("cost");
-        if (credits <= 0) credits = json.getDoubleValue("creditUsage");
-        // 尝试嵌套 usage 对象
-        if (credits <= 0) {
-            JSONObject usage = json.getJSONObject("usage");
-            if (usage != null) {
-                credits = usage.getDoubleValue("credits");
-                if (credits <= 0) credits = usage.getDoubleValue("creditsConsumed");
-            }
-        }
+        // 实际结构: {"unit":"credit","unitPlural":"credits","usage":0.14128...}
+        double credits = json.getDoubleValue("usage");
+        if (credits <= 0) credits = json.getDoubleValue("credits");
         if (credits > 0) {
             log.info("[METERING] credits={}", credits);
             callback.onCredits(credits);
-        } else {
-            log.warn("[METERING] 未能解析出 credits，原始数据: {}", json.toJSONString());
         }
     }
 
