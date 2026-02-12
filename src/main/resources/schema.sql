@@ -83,6 +83,7 @@ CREATE INDEX IF NOT EXISTS idx_request_logs_timestamp ON request_logs(timestamp)
 CREATE INDEX IF NOT EXISTS idx_request_logs_trace_id ON request_logs(trace_id);
 CREATE INDEX IF NOT EXISTS idx_request_logs_model ON request_logs(model);
 CREATE INDEX IF NOT EXISTS idx_request_logs_success ON request_logs(success);
+CREATE INDEX IF NOT EXISTS idx_request_logs_conversation ON request_logs(conversation_id);
 
 -- 追踪日志表
 CREATE TABLE IF NOT EXISTS traces (

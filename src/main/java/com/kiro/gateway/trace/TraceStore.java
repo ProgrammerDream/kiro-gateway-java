@@ -1,11 +1,15 @@
 package com.kiro.gateway.trace;
 
+import com.alibaba.fastjson2.JSONArray;
+import com.alibaba.fastjson2.JSONObject;
 import com.kiro.gateway.dao.RequestLogDAO;
 import com.kiro.gateway.dao.TraceDAO;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 
@@ -49,14 +53,56 @@ public class TraceStore {
     public void saveWithRequestLog(TraceLog traceLog, String accountName) {
         save(traceLog);
 
-        // 同时写入请求日志表
+        String conversationId = extractConversationId(traceLog.clientRequest(), traceLog.apiKey());
         requestLogDAO.insert(
                 traceLog.traceId(), traceLog.apiType(), traceLog.model(),
                 traceLog.accountId(), accountName,
                 traceLog.inputTokens(), traceLog.outputTokens(), traceLog.credits(),
                 traceLog.durationMs(), traceLog.success(), traceLog.errorMessage(),
-                traceLog.apiKey(), traceLog.stream(), traceLog.kiroEndpoint()
+                traceLog.apiKey(), traceLog.stream(), traceLog.kiroEndpoint(),
+                conversationId
         );
+    }
+
+    /**
+     * 从 clientRequest 中提取 conversation_id
+     * <p>
+     * 取第一条 role=user 的消息内容，与 apiKey 拼接做 SHA-256 取前 12 位
+     */
+    public static String extractConversationId(String clientRequest, String apiKey) {
+        if (clientRequest == null || clientRequest.isEmpty()) return null;
+        try {
+            JSONObject req = JSONObject.parseObject(clientRequest);
+            JSONArray messages = req.getJSONArray("messages");
+            if (messages == null || messages.isEmpty()) return null;
+
+            // 找第一条 user 消息
+            String firstUserContent = null;
+            for (int i = 0; i < messages.size(); i++) {
+                JSONObject msg = messages.getJSONObject(i);
+                if ("user".equals(msg.getString("role"))) {
+                    Object content = msg.get("content");
+                    // content 可能是 string 或 array
+                    firstUserContent = content instanceof String
+                            ? (String) content
+                            : content.toString();
+                    break;
+                }
+            }
+            if (firstUserContent == null) return null;
+
+            String seed = (apiKey != null ? apiKey : "") + "||" + firstUserContent;
+            MessageDigest md = MessageDigest.getInstance("SHA-256");
+            byte[] hash = md.digest(seed.getBytes(StandardCharsets.UTF_8));
+            StringBuilder sb = new StringBuilder();
+            for (int i = 0; i < 6; i++) {
+                sb.append(String.format("%02x", hash[i]));
+            }
+            return sb.toString();
+        } catch (Exception e) {
+            log.debug("提取 conversationId 失败: {}", e.getMessage());
+            return null;
+        }
     }
 
     /**

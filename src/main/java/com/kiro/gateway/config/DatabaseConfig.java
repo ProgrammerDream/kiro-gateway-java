@@ -1,5 +1,7 @@
 package com.kiro.gateway.config;
 
+import com.kiro.gateway.dao.TraceDAO;
+import com.kiro.gateway.trace.TraceStore;
 import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -12,6 +14,8 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
+import java.util.List;
+import java.util.Map;
 
 /**
  * SQLite 数据库初始化（schema + 默认数据）
@@ -23,10 +27,12 @@ public class DatabaseConfig {
 
     private final AppProperties properties;
     private final JdbcTemplate jdbc;
+    private final TraceDAO traceDAO;
 
-    public DatabaseConfig(AppProperties properties, JdbcTemplate jdbc) {
+    public DatabaseConfig(AppProperties properties, JdbcTemplate jdbc, TraceDAO traceDAO) {
         this.properties = properties;
         this.jdbc = jdbc;
+        this.traceDAO = traceDAO;
     }
 
     @PostConstruct
@@ -42,6 +48,7 @@ public class DatabaseConfig {
         }
 
         initSchema();
+        migrate();
         initDefaults();
 
         log.info("SQLite 数据库初始化完成: {}", dbPath);
@@ -62,6 +69,51 @@ public class DatabaseConfig {
         } catch (IOException e) {
             throw new RuntimeException("初始化数据库 schema 失败", e);
         }
+    }
+
+    /**
+     * 数据库迁移（增量 schema 变更）
+     */
+    private void migrate() {
+        // v2: request_logs 增加 conversation_id 列
+        tryAddColumn("request_logs", "conversation_id", "TEXT");
+        backfillConversationId();
+    }
+
+    private void tryAddColumn(String table, String column, String type) {
+        try {
+            jdbc.execute("ALTER TABLE " + table + " ADD COLUMN " + column + " " + type);
+            log.info("数据库迁移: {}.{} 列已添加", table, column);
+        } catch (Exception e) {
+            // 列已存在则忽略
+        }
+    }
+
+    /**
+     * 回填历史 request_logs 中缺失的 conversation_id
+     */
+    private void backfillConversationId() {
+        List<Map<String, Object>> rows = jdbc.queryForList(
+                "SELECT id, trace_id, api_key FROM request_logs WHERE conversation_id IS NULL");
+        if (rows.isEmpty()) return;
+
+        log.info("回填 conversation_id: {} 条记录", rows.size());
+        int updated = 0;
+        for (Map<String, Object> row : rows) {
+            int id = ((Number) row.get("id")).intValue();
+            String traceId = (String) row.get("trace_id");
+            String apiKey = (String) row.get("api_key");
+
+            TraceDAO.TraceRow trace = traceDAO.findByTraceId(traceId);
+            if (trace == null) continue;
+
+            String convId = TraceStore.extractConversationId(trace.clientRequest(), apiKey);
+            if (convId != null) {
+                jdbc.update("UPDATE request_logs SET conversation_id = ? WHERE id = ?", convId, id);
+                updated++;
+            }
+        }
+        log.info("回填 conversation_id 完成: {}/{} 条", updated, rows.size());
     }
 
     private void initDefaults() {

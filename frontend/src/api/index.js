@@ -42,6 +42,10 @@ export default {
   // 请求日志
   getRequestLogs: (params) => api.get('/request-logs', { params }),
 
+  // 会话管理
+  getConversations: (params) => api.get('/conversations', { params }),
+  getConversationMessages: (conversationId) => api.get(`/conversations/${conversationId}/messages`),
+
   // 追踪详情
   getTrace: (traceId) => api.get(`/traces/${traceId}`),
 

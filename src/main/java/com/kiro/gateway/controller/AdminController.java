@@ -205,6 +205,58 @@ public class AdminController {
         return Mono.just(result.toJSONString());
     }
 
+    // ==================== 会话管理 ====================
+
+    @GetMapping("/conversations")
+    public Mono<String> listConversations(@RequestParam(defaultValue = "20") int limit,
+                                           @RequestParam(defaultValue = "0") int offset) {
+        List<RequestLogDAO.ConversationSummary> conversations = requestLogDAO.findConversations(limit, offset);
+        int total = requestLogDAO.countConversations();
+
+        JSONArray arr = new JSONArray();
+        for (RequestLogDAO.ConversationSummary c : conversations) {
+            JSONObject item = new JSONObject();
+            item.put("conversationId", c.conversationId());
+            item.put("rounds", c.rounds());
+            item.put("firstTime", c.firstTime());
+            item.put("lastTime", c.lastTime());
+            item.put("model", c.model());
+            item.put("accountName", c.accountName());
+            item.put("totalInput", c.totalInput());
+            item.put("totalOutput", c.totalOutput());
+            item.put("totalCredits", c.totalCredits());
+            item.put("allSuccess", c.allSuccess());
+            arr.add(item);
+        }
+
+        JSONObject result = JSONObject.of("data", arr, "total", total);
+        return Mono.just(result.toJSONString());
+    }
+
+    @GetMapping("/conversations/{conversationId}/messages")
+    public Mono<String> getConversationMessages(@PathVariable String conversationId) {
+        List<RequestLogDAO.RequestLogRow> logs = requestLogDAO.findByConversationId(conversationId);
+        JSONArray arr = new JSONArray();
+        for (RequestLogDAO.RequestLogRow r : logs) {
+            JSONObject item = new JSONObject();
+            item.put("id", r.id());
+            item.put("timestamp", r.timestamp());
+            item.put("traceId", r.traceId());
+            item.put("apiType", r.apiType());
+            item.put("model", r.model());
+            item.put("accountName", r.accountName());
+            item.put("inputTokens", r.inputTokens());
+            item.put("outputTokens", r.outputTokens());
+            item.put("credits", r.credits());
+            item.put("durationMs", r.durationMs());
+            item.put("success", r.success());
+            item.put("stream", r.stream());
+            item.put("traceId", r.traceId());
+            arr.add(item);
+        }
+        return Mono.just(arr.toJSONString());
+    }
+
     // ==================== 追踪详情 ====================
 
     @GetMapping("/traces/{traceId}")
