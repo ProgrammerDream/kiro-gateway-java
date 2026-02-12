@@ -5,7 +5,7 @@
       <pre>{{ data }}</pre>
     </div>
     <div v-else>
-      <vue-json-pretty :data="data" :deep="3" :showLength="true" :showLine="true" />
+      <vue-json-pretty :data="data" :deep="3" :showLength="true" :showLine="true" :collapsedOnClickBrackets="true" />
     </div>
     <el-button size="small" text class="copy-btn" @click="handleCopy">
       <el-icon><CopyDocument /></el-icon> 复制

@@ -3,7 +3,7 @@
     <div class="page-header" style="display:flex;justify-content:space-between;align-items:center">
       <h1>账号管理</h1>
       <div style="display:flex;gap:8px">
-        <el-button @click="queryAllCredits" :loading="queryingAll">查询全部额度</el-button>
+        <el-button @click="queryAllCredits" :loading="queryingAll">刷新额度</el-button>
         <el-button type="primary" @click="showAddDialog = true">添加账号</el-button>
       </div>
     </div>
@@ -136,7 +136,41 @@ const creditsSummary = ref(null)
 const queryingAll = ref(false)
 
 async function loadAccounts() {
-  try { accounts.value = await api.getAccounts() } catch (e) { console.error(e) }
+  try {
+    accounts.value = await api.getAccounts()
+    restoreCreditsCache()
+  } catch (e) { console.error(e) }
+}
+
+// 从 localStorage 恢复上次查询的额度数据
+function restoreCreditsCache() {
+  try {
+    let cached = localStorage.getItem('credits_cache')
+    if (!cached) return
+    let data = JSON.parse(cached)
+    if (data.summary) creditsSummary.value = data.summary
+    if (data.accounts) {
+      for (let item of data.accounts) {
+        let row = accounts.value.find(a => a.id === item.id)
+        if (row) {
+          if (item.error) {
+            row._creditsError = item.error
+          } else {
+            row._credits = item
+          }
+        }
+      }
+    }
+  } catch (e) { /* ignore */ }
+}
+
+function saveCreditsCache(summary) {
+  try {
+    localStorage.setItem('credits_cache', JSON.stringify({
+      summary,
+      accounts: summary.accounts
+    }))
+  } catch (e) { /* ignore */ }
 }
 
 async function queryCredits(row) {
@@ -162,6 +196,7 @@ async function queryAllCredits() {
   try {
     let res = await api.getCreditsSummary()
     creditsSummary.value = res
+    saveCreditsCache(res)
     // 将每个账号的 credits 回填到表格
     if (res.accounts) {
       for (let item of res.accounts) {
@@ -201,7 +236,7 @@ async function handleAdd() {
 }
 
 function openEdit(row) {
-  editForm.value = { id: row.id, name: row.name, authMethod: row.authMethod, credentials: '' }
+  editForm.value = { id: row.id, name: row.name, authMethod: row.authMethod, credentials: row.credentials || '' }
   showEditDialog.value = true
 }
 

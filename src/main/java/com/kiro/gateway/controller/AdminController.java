@@ -118,6 +118,7 @@ public class AdminController {
             item.put("creditsTotal", a.creditsTotal());
             item.put("cooldownUntil", a.cooldownUntil() != null ? a.cooldownUntil().toString() : null);
             item.put("lastUsedAt", a.lastUsedAt() != null ? a.lastUsedAt().toString() : null);
+            item.put("credentials", a.credentials());
             item.put("createdAt", a.createdAt().toString());
             arr.add(item);
         }
