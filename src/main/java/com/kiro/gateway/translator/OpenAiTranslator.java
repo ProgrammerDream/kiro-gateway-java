@@ -142,13 +142,17 @@ public class OpenAiTranslator implements RequestTranslator {
     /**
      * 将 Kiro 响应转换为 OpenAI Chat Completion（非流式）
      */
-    public JSONObject toOpenAiResponse(String content, JSONArray toolCalls,
+    public JSONObject toOpenAiResponse(String content, String reasoningContent,
+                                        JSONArray toolCalls,
                                         int inputTokens, int outputTokens,
                                         String model, String finishReason) {
         JSONObject message = JSONObject.of(
                 "role", "assistant", //
                 "content", content //
         );
+        if (reasoningContent != null && !reasoningContent.isEmpty()) {
+            message.put("reasoning_content", reasoningContent);
+        }
         if (toolCalls != null && !toolCalls.isEmpty()) {
             message.put("tool_calls", toolCalls);
         }
@@ -177,8 +181,12 @@ public class OpenAiTranslator implements RequestTranslator {
      * 构建 SSE chunk（流式）
      */
     public JSONObject toOpenAiStreamChunk(String model, String deltaContent,
+                                           String reasoningContent,
                                            JSONObject toolCallDelta, String finishReason) {
         JSONObject delta = new JSONObject();
+        if (reasoningContent != null) {
+            delta.put("reasoning_content", reasoningContent);
+        }
         if (deltaContent != null) {
             delta.put("content", deltaContent);
         }

@@ -127,11 +127,16 @@ public class ClaudeTranslator implements RequestTranslator {
     /**
      * 将 Kiro 响应转换为 Claude 非流式响应
      */
-    public JSONObject toClaudeResponse(String content, JSONArray toolUses,
+    public JSONObject toClaudeResponse(String content, String thinkingContent,
+                                        JSONArray toolUses,
                                         int inputTokens, int outputTokens,
                                         String model, String stopReason) {
         JSONArray contentBlocks = new JSONArray();
 
+        // thinking block 放在 content 数组开头
+        if (thinkingContent != null && !thinkingContent.isEmpty()) {
+            contentBlocks.add(JSONObject.of("type", "thinking", "thinking", thinkingContent));
+        }
         if (content != null && !content.isEmpty()) {
             contentBlocks.add(JSONObject.of("type", "text", "text", content));
         }

@@ -7,7 +7,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -61,7 +64,8 @@ public class ModelResolver {
         }
 
         // 检查是否启用 thinking 模式
-        boolean isThinking = false;
+        // 全局开关开启时默认启用，或模型名以 -thinking 后缀手动启用
+        boolean isThinking = properties.getThinking().isEnabled();
         String cleanModel = externalModel;
         String thinkingSuffix = properties.getThinking().getSuffix();
         if (cleanModel.endsWith(thinkingSuffix)) {
@@ -97,6 +101,13 @@ public class ModelResolver {
         // 未匹配，使用默认模型
         log.debug("模型 '{}' 未找到映射，使用默认模型", externalModel);
         return defaultResult();
+    }
+
+    /**
+     * 根据内部模型 ID 获取模型信息
+     */
+    public ModelInfo getModelInfo(String internalId) {
+        return modelCache.get(internalId);
     }
 
     /**

@@ -210,13 +210,25 @@ public class EventStreamParser {
                 return;
             }
 
+            // 记录所有事件类型，方便排查
+            if (log.isDebugEnabled()) {
+                log.debug("[EVENT] type={}, payload={}", eventType,
+                        payload.length() > 200 ? payload.substring(0, 200) + "..." : payload);
+            }
+
             switch (eventType) {
                 case "assistantResponseEvent" -> handleAssistantResponse(json);
                 case "reasoningContentEvent" -> handleReasoningContent(json);
                 case "toolUseEvent" -> handleToolUseEvent(json);
-                case "messageMetadataEvent" -> handleMessageMetadata(json);
+                case "messageMetadataEvent", "metadataEvent" -> handleMessageMetadata(json);
                 case "meteringEvent" -> handleMeteringEvent(json);
-                default -> log.debug("未知事件类型: {}", eventType);
+                case "contextUsageEvent", "contextUsagePercentageEvent" -> {
+                    double pct = json.getDoubleValue("contextUsagePercentage");
+                    log.info("[CONTEXT USAGE] {}%", pct);
+                    callback.onContextUsage(pct);
+                }
+                default -> log.warn("未知事件类型: {}, payload={}", eventType,
+                        payload.length() > 200 ? payload.substring(0, 200) + "..." : payload);
             }
         } catch (Exception e) {
             log.warn("解析事件失败: type={}, error={}", eventType, e.getMessage());
@@ -257,10 +269,23 @@ public class EventStreamParser {
     }
 
     private void handleMessageMetadata(JSONObject json) {
+        // 兼容多种嵌套格式：usage / tokenUsage / 顶层
         JSONObject usage = json.getJSONObject("usage");
-        if (usage != null) {
-            int inputTokens = usage.getIntValue("inputTokens", 0);
-            int outputTokens = usage.getIntValue("outputTokens", 0);
+        if (usage == null) {
+            usage = json.getJSONObject("tokenUsage");
+        }
+        if (usage == null) {
+            usage = json;
+        }
+
+        int inputTokens = usage.getIntValue("inputTokens",
+                usage.getIntValue("input_tokens",
+                        usage.getIntValue("uncachedInputTokens", 0)));
+        int outputTokens = usage.getIntValue("outputTokens",
+                usage.getIntValue("output_tokens", 0));
+
+        if (inputTokens > 0 || outputTokens > 0) {
+            log.info("[UPSTREAM METADATA] inputTokens={}, outputTokens={}", inputTokens, outputTokens);
             callback.onUsage(inputTokens, outputTokens);
         }
     }

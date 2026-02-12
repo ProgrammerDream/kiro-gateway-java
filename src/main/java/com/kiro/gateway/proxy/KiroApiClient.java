@@ -137,10 +137,8 @@ public class KiroApiClient {
                 .header("x-amzn-kiro-agent-mode", "vibe")
                 .header("x-amz-user-agent", xAmzUserAgent)
                 .header("User-Agent", userAgent)
-                .header("Host", "q." + region + ".amazonaws.com")
                 .header("amz-sdk-invocation-id", UUID.randomUUID().toString())
                 .header("amz-sdk-request", "attempt=1; max=3")
-                .header("Connection", "close")
                 .POST(HttpRequest.BodyPublishers.ofString(payload))
                 .build();
     }
@@ -192,6 +190,11 @@ public class KiroApiClient {
             public void onCredits(double credits) {
                 traceCtx.recordTokenUsage(traceCtx.inputTokens(), traceCtx.outputTokens(), credits);
                 callback.onCredits(credits);
+            }
+
+            @Override
+            public void onContextUsage(double percentage) {
+                callback.onContextUsage(percentage);
             }
 
             @Override

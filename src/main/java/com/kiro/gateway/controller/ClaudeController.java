@@ -16,14 +16,23 @@ import com.kiro.gateway.translator.RequestTranslator;
 import com.kiro.gateway.translator.ThinkingParser;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.core.io.buffer.DataBuffer;
+import org.springframework.core.io.buffer.DataBufferFactory;
 import org.springframework.http.MediaType;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.Sinks;
 
-import java.util.*;
+import java.nio.charset.StandardCharsets;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.UUID;
 
 /**
  * Anthropic Claude 兼容 API 端点
@@ -57,8 +66,8 @@ public class ClaudeController {
     /**
      * POST /v1/messages
      */
-    @PostMapping(value = "/messages", produces = MediaType.APPLICATION_JSON_VALUE)
-    public Mono<Object> messages(@RequestBody String body, ServerWebExchange exchange) {
+    @PostMapping(value = "/messages")
+    public Mono<Void> messages(@RequestBody String body, ServerWebExchange exchange) {
         JSONObject request = JSONObject.parseObject(body);
         boolean stream = request.getBooleanValue("stream", false);
 
@@ -85,16 +94,27 @@ public class ClaudeController {
         RequestTranslator.TranslateResult translated = translator.translate(request, resolved.kiroModelId(), resolved.thinking());
         String payload = translated.payload().toJsonString();
 
+        DataBufferFactory bufferFactory = exchange.getResponse().bufferFactory();
+
         if (stream) {
-            return Mono.just(streamResponse(payload, accessToken, traceCtx, account, resolved, translated.toolNameMap(), exchange));
+            exchange.getResponse().getHeaders().setContentType(MediaType.TEXT_EVENT_STREAM);
+            exchange.getResponse().getHeaders().setCacheControl("no-cache");
+            Flux<String> sseFlux = streamResponse(payload, accessToken, traceCtx, account, resolved, translated.toolNameMap());
+            return exchange.getResponse().writeAndFlushWith(
+                    sseFlux.map(s -> Mono.just(bufferFactory.wrap(s.getBytes(StandardCharsets.UTF_8))))
+            );
         }
 
-        // 非流式
+        // 非流式：直接写 JSON 字节，避免 Jackson 二次序列化
         return Mono.fromCallable(() -> {
             NonStreamResult result = callNonStream(payload, accessToken, traceCtx, account, resolved, translated.toolNameMap());
-            return (Object) result.response.toJSONString();
-        }).doOnSuccess(r -> {
+            return result.response.toJSONString();
+        }).flatMap(json -> {
             exchange.getResponse().getHeaders().setContentType(MediaType.APPLICATION_JSON);
+            byte[] bytes = json.getBytes(StandardCharsets.UTF_8);
+            exchange.getResponse().getHeaders().setContentLength(bytes.length);
+            DataBuffer buffer = bufferFactory.wrap(bytes);
+            return exchange.getResponse().writeWith(Mono.just(buffer));
         });
     }
 
@@ -103,13 +123,12 @@ public class ClaudeController {
     private Flux<String> streamResponse(String payload, String accessToken,
                                          TraceContext traceCtx, Account account,
                                          ModelResolver.ResolveResult resolved,
-                                         Map<String, String> toolNameMap,
-                                         ServerWebExchange exchange) {
-        exchange.getResponse().getHeaders().setContentType(MediaType.TEXT_EVENT_STREAM);
-
+                                         Map<String, String> toolNameMap) {
         Sinks.Many<String> sink = Sinks.many().unicast().onBackpressureBuffer();
         Map<String, String> reverseToolMap = reverseMap(toolNameMap);
-        ThinkingParser thinkingParser = resolved.thinking() ? new ThinkingParser() : null;
+        boolean thinkingEnabled = resolved.thinking();
+        ThinkingParser thinkingParser = thinkingEnabled ? new ThinkingParser() : null;
+        String thinkingSignature = "sig_" + UUID.randomUUID().toString().replace("-", "");
 
         // 发送 message_start
         emitEvent(sink, "message_start", JSONObject.of("type", "message_start", //
@@ -119,27 +138,76 @@ public class ClaudeController {
                         "model", resolved.requestedModel() //
                 )));
 
-        // 发送 content_block_start (text)
-        emitEvent(sink, "content_block_start", JSONObject.of("type", "content_block_start", //
-                "index", 0, //
-                "content_block", JSONObject.of("type", "text", "text", "")));
-
+        // 内容块索引和状态跟踪
         final int[] blockIndex = {0};
+        final boolean[] thinkingBlockStarted = {false};
+        final boolean[] textBlockStarted = {false};
         final boolean[] hasToolUse = {false};
+        // Token 估算跟踪（thinking + 正文都计入 output）
+        final int[] outputLength = {0};
+        final double[] contextUsagePct = {-1};
+        // 模型最大 token 数
+        ModelResolver.ModelInfo modelInfo = modelResolver.getModelInfo(resolved.kiroModelId());
+        final int maxTokens = modelInfo != null ? modelInfo.maxTokens : 200000;
 
         new Thread(() -> {
             try {
                 kiroClient.callStream(payload, accessToken, traceCtx, new StreamCallback() {
+
+                    /**
+                     * 确保 thinking 块已关闭
+                     */
+                    private void closeThinkingBlockIfOpen() {
+                        if (thinkingBlockStarted[0]) {
+                            emitEvent(sink, "content_block_stop", JSONObject.of("type", "content_block_stop", //
+                                    "index", blockIndex[0]));
+                            thinkingBlockStarted[0] = false;
+                            blockIndex[0]++;
+                        }
+                    }
+
+                    /**
+                     * 确保 text 块已开启
+                     */
+                    private void ensureTextBlockStarted() {
+                        if (!textBlockStarted[0]) {
+                            closeThinkingBlockIfOpen();
+                            emitEvent(sink, "content_block_start", JSONObject.of("type", "content_block_start", //
+                                    "index", blockIndex[0], //
+                                    "content_block", JSONObject.of("type", "text", "text", "")));
+                            textBlockStarted[0] = true;
+                        }
+                    }
+
+                    /**
+                     * 关闭 text 块（如果已开启）
+                     */
+                    private void closeTextBlockIfOpen() {
+                        if (textBlockStarted[0]) {
+                            emitEvent(sink, "content_block_stop", JSONObject.of("type", "content_block_stop", //
+                                    "index", blockIndex[0]));
+                            textBlockStarted[0] = false;
+                            blockIndex[0]++;
+                        }
+                    }
+
                     @Override
                     public void onText(String text) {
+                        outputLength[0] += text.length();
                         if (thinkingParser == null) {
+                            ensureTextBlockStarted();
                             emitEvent(sink, "content_block_delta", JSONObject.of("type", "content_block_delta", //
                                     "index", blockIndex[0], //
                                     "delta", JSONObject.of("type", "text_delta", "text", text)));
                             return;
                         }
                         ThinkingParser.ParseResult parsed = thinkingParser.feed(text);
+                        // ThinkingParser 从 <thinking> 标签中提取的 thinking 内容
+                        if (parsed.hasThinking()) {
+                            onThinking(parsed.thinkingDelta());
+                        }
                         if (parsed.hasContent()) {
+                            ensureTextBlockStarted();
                             emitEvent(sink, "content_block_delta", JSONObject.of("type", "content_block_delta", //
                                     "index", blockIndex[0], //
                                     "delta", JSONObject.of("type", "text_delta", "text", parsed.contentDelta())));
@@ -148,7 +216,24 @@ public class ClaudeController {
 
                     @Override
                     public void onThinking(String thinking) {
-                        // Claude thinking 格式
+                        outputLength[0] += thinking.length();
+                        // 防御性关闭 text 块（避免块嵌套）
+                        closeTextBlockIfOpen();
+                        // 开启 thinking 内容块（如果尚未开启）
+                        if (!thinkingBlockStarted[0]) {
+                            JSONObject thinkingBlock = new JSONObject();
+                            thinkingBlock.put("type", "thinking");
+                            thinkingBlock.put("thinking", "");
+                            thinkingBlock.put("signature", thinkingSignature);
+                            emitEvent(sink, "content_block_start", JSONObject.of("type", "content_block_start", //
+                                    "index", blockIndex[0], //
+                                    "content_block", thinkingBlock));
+                            thinkingBlockStarted[0] = true;
+                        }
+                        // 发送 thinking delta
+                        emitEvent(sink, "content_block_delta", JSONObject.of("type", "content_block_delta", //
+                                "index", blockIndex[0], //
+                                "delta", JSONObject.of("type", "thinking_delta", "thinking", thinking)));
                     }
 
                     @Override
@@ -156,11 +241,9 @@ public class ClaudeController {
                         hasToolUse[0] = true;
                         String originalName = reverseToolMap.getOrDefault(name, name);
 
-                        // 结束当前 text block
-                        emitEvent(sink, "content_block_stop", JSONObject.of("type", "content_block_stop", //
-                                "index", blockIndex[0]));
-
-                        blockIndex[0]++;
+                        // 关闭已有的 thinking/text 块
+                        closeThinkingBlockIfOpen();
+                        closeTextBlockIfOpen();
 
                         // 开始 tool_use block
                         JSONObject toolBlock = new JSONObject();
@@ -194,19 +277,36 @@ public class ClaudeController {
                     public void onCredits(double credits) {}
 
                     @Override
+                    public void onContextUsage(double percentage) {
+                        contextUsagePct[0] = percentage;
+                    }
+
+                    @Override
                     public void onComplete() {
                         if (thinkingParser != null) {
                             ThinkingParser.ParseResult last = thinkingParser.finish();
+                            if (last.hasThinking()) {
+                                onThinking(last.thinkingDelta());
+                            }
                             if (last.hasContent()) {
+                                ensureTextBlockStarted();
                                 emitEvent(sink, "content_block_delta", JSONObject.of("type", "content_block_delta", //
                                         "index", blockIndex[0], //
                                         "delta", JSONObject.of("type", "text_delta", "text", last.contentDelta())));
                             }
                         }
 
-                        // 结束最后一个 block
-                        emitEvent(sink, "content_block_stop", JSONObject.of("type", "content_block_stop", //
-                                "index", blockIndex[0]));
+                        // 关闭所有未关闭的块
+                        closeThinkingBlockIfOpen();
+                        closeTextBlockIfOpen();
+
+                        // 从 contextUsagePercentage 推算 token
+                        if (traceCtx.inputTokens() == 0 && contextUsagePct[0] > 0) {
+                            int outputTokens = Math.max(1, outputLength[0] / 4);
+                            int totalTokens = (int) (contextUsagePct[0] / 100.0 * maxTokens);
+                            int inputTokens = Math.max(0, totalTokens - outputTokens);
+                            traceCtx.recordTokenUsage(inputTokens, outputTokens, traceCtx.credits());
+                        }
 
                         // message_delta
                         String stopReason = hasToolUse[0] ? "tool_use" : "end_turn";
@@ -260,9 +360,13 @@ public class ClaudeController {
                                            ModelResolver.ResolveResult resolved,
                                            Map<String, String> toolNameMap) {
         StringBuilder contentBuilder = new StringBuilder();
+        StringBuilder thinkingBuilder = new StringBuilder();
         Map<String, String> reverseToolMap = reverseMap(toolNameMap);
         JSONArray toolUses = new JSONArray();
         ThinkingParser thinkingParser = resolved.thinking() ? new ThinkingParser() : null;
+        final double[] contextUsagePct = {-1};
+        ModelResolver.ModelInfo modelInfo = modelResolver.getModelInfo(resolved.kiroModelId());
+        final int maxTokensVal = modelInfo != null ? modelInfo.maxTokens : 200000;
 
         Map<String, JSONObject> toolUseBuffers = new LinkedHashMap<>();
 
@@ -275,13 +379,18 @@ public class ClaudeController {
                         return;
                     }
                     ThinkingParser.ParseResult parsed = thinkingParser.feed(text);
+                    if (parsed.hasThinking()) {
+                        thinkingBuilder.append(parsed.thinkingDelta());
+                    }
                     if (parsed.hasContent()) {
                         contentBuilder.append(parsed.contentDelta());
                     }
                 }
 
                 @Override
-                public void onThinking(String thinking) {}
+                public void onThinking(String thinking) {
+                    thinkingBuilder.append(thinking);
+                }
 
                 @Override
                 public void onToolUseStart(String toolUseId, String name) {
@@ -329,9 +438,17 @@ public class ClaudeController {
                 public void onCredits(double credits) {}
 
                 @Override
+                public void onContextUsage(double percentage) {
+                    contextUsagePct[0] = percentage;
+                }
+
+                @Override
                 public void onComplete() {
                     if (thinkingParser != null) {
                         ThinkingParser.ParseResult last = thinkingParser.finish();
+                        if (last.hasThinking()) {
+                            thinkingBuilder.append(last.thinkingDelta());
+                        }
                         if (last.hasContent()) {
                             contentBuilder.append(last.contentDelta());
                         }
@@ -344,9 +461,21 @@ public class ClaudeController {
                 }
             });
 
+            // 从 contextUsagePercentage 推算 token
+            // thinking + 正文都计入 output
+            if (traceCtx.inputTokens() == 0 && contextUsagePct[0] > 0) {
+                int totalOutputLen = contentBuilder.length() + thinkingBuilder.length();
+                int outputTokens = Math.max(1, totalOutputLen / 4);
+                int totalTokens = (int) (contextUsagePct[0] / 100.0 * maxTokensVal);
+                int inputTokens = Math.max(0, totalTokens - outputTokens);
+                traceCtx.recordTokenUsage(inputTokens, outputTokens, traceCtx.credits());
+            }
+
             String stopReason = toolUses.isEmpty() ? "end_turn" : "tool_use";
+            String thinkingContent = thinkingBuilder.isEmpty() ? null : thinkingBuilder.toString();
             JSONObject response = translator.toClaudeResponse(
-                    contentBuilder.toString(), toolUses.isEmpty() ? null : toolUses,
+                    contentBuilder.toString(), thinkingContent,
+                    toolUses.isEmpty() ? null : toolUses,
                     traceCtx.inputTokens(), traceCtx.outputTokens(),
                     resolved.requestedModel(), stopReason
             );

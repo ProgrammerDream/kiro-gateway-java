@@ -48,9 +48,12 @@ public class AppProperties {
 
     @Data
     public static class ThinkingConfig {
+        // 是否默认开启 thinking（对齐 Python 版 FAKE_REASONING_ENABLED）
+        private boolean enabled = true;
         private String suffix = "-thinking";
         private String outputFormat = "xml";
         private String prompt = "<thinking_mode>enabled</thinking_mode>";
+        private int maxTokens = 4000;
     }
 
     @Data

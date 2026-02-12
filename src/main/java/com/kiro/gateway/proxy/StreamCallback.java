@@ -43,6 +43,11 @@ public interface StreamCallback {
     void onCredits(double credits);
 
     /**
+     * 收到上下文使用百分比
+     */
+    void onContextUsage(double percentage);
+
+    /**
      * 流式完成
      */
     void onComplete();

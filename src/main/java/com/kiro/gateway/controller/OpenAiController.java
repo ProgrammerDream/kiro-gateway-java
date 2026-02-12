@@ -16,14 +16,25 @@ import com.kiro.gateway.translator.RequestTranslator;
 import com.kiro.gateway.translator.ThinkingParser;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.core.io.buffer.DataBuffer;
+import org.springframework.core.io.buffer.DataBufferFactory;
 import org.springframework.http.MediaType;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.Sinks;
 
-import java.util.*;
+import java.nio.charset.StandardCharsets;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
 
 /**
  * OpenAI 兼容 API 端点
@@ -58,8 +69,8 @@ public class OpenAiController {
     /**
      * POST /v1/chat/completions
      */
-    @PostMapping(value = "/chat/completions", produces = MediaType.APPLICATION_JSON_VALUE)
-    public Mono<Object> chatCompletions(@RequestBody String body, ServerWebExchange exchange) {
+    @PostMapping(value = "/chat/completions")
+    public Mono<Void> chatCompletions(@RequestBody String body, ServerWebExchange exchange) {
         JSONObject request = JSONObject.parseObject(body);
         boolean stream = request.getBooleanValue("stream", false);
 
@@ -86,16 +97,27 @@ public class OpenAiController {
         RequestTranslator.TranslateResult translated = translator.translate(request, resolved.kiroModelId(), resolved.thinking());
         String payload = translated.payload().toJsonString();
 
+        DataBufferFactory bufferFactory = exchange.getResponse().bufferFactory();
+
         if (stream) {
-            return Mono.just(streamResponse(payload, accessToken, traceCtx, account, resolved, translated.toolNameMap(), exchange));
+            exchange.getResponse().getHeaders().setContentType(MediaType.TEXT_EVENT_STREAM);
+            exchange.getResponse().getHeaders().setCacheControl("no-cache");
+            Flux<String> sseFlux = streamResponse(payload, accessToken, traceCtx, account, resolved, translated.toolNameMap());
+            return exchange.getResponse().writeAndFlushWith(
+                    sseFlux.map(s -> Mono.just(bufferFactory.wrap(s.getBytes(StandardCharsets.UTF_8))))
+            );
         }
 
-        // 非流式
+        // 非流式：直接写 JSON 字节，避免 Jackson 二次序列化
         return Mono.fromCallable(() -> {
             NonStreamResult result = callNonStream(payload, accessToken, traceCtx, account, resolved, translated.toolNameMap());
-            return (Object) result.response.toJSONString();
-        }).doOnSuccess(r -> {
+            return result.response.toJSONString();
+        }).flatMap(json -> {
             exchange.getResponse().getHeaders().setContentType(MediaType.APPLICATION_JSON);
+            byte[] bytes = json.getBytes(StandardCharsets.UTF_8);
+            exchange.getResponse().getHeaders().setContentLength(bytes.length);
+            DataBuffer buffer = bufferFactory.wrap(bytes);
+            return exchange.getResponse().writeWith(Mono.just(buffer));
         });
     }
 
@@ -124,10 +146,7 @@ public class OpenAiController {
     private Flux<String> streamResponse(String payload, String accessToken,
                                          TraceContext traceCtx, Account account,
                                          ModelResolver.ResolveResult resolved,
-                                         Map<String, String> toolNameMap,
-                                         ServerWebExchange exchange) {
-        exchange.getResponse().getHeaders().setContentType(MediaType.TEXT_EVENT_STREAM);
-
+                                         Map<String, String> toolNameMap) {
         Sinks.Many<String> sink = Sinks.many().unicast().onBackpressureBuffer();
         Map<String, String> reverseToolMap = reverseMap(toolNameMap);
         ThinkingParser thinkingParser = resolved.thinking() ? new ThinkingParser() : null;
@@ -135,26 +154,35 @@ public class OpenAiController {
         // 工具调用状态
         final int[] toolIndex = {0};
         final Map<String, String> toolCallIds = new LinkedHashMap<>();
+        // Token 估算跟踪（thinking + 正文都计入 output）
+        final int[] outputLength = {0};
+        final double[] contextUsagePct = {-1};
+        ModelResolver.ModelInfo modelInfo = modelResolver.getModelInfo(resolved.kiroModelId());
+        final int maxTokens = modelInfo != null ? modelInfo.maxTokens : 200000;
 
         new Thread(() -> {
             try {
                 kiroClient.callStream(payload, accessToken, traceCtx, new StreamCallback() {
                     @Override
                     public void onText(String text) {
+                        outputLength[0] += text.length();
                         if (thinkingParser == null) {
-                            emitChunk(sink, resolved.requestedModel(), text, null, null);
+                            emitChunk(sink, resolved.requestedModel(), text, null, null, null);
                             return;
                         }
                         ThinkingParser.ParseResult parsed = thinkingParser.feed(text);
-                        // thinking 内容暂不输出（OpenAI 格式不支持）
+                        if (parsed.hasThinking()) {
+                            emitChunk(sink, resolved.requestedModel(), null, parsed.thinkingDelta(), null, null);
+                        }
                         if (parsed.hasContent()) {
-                            emitChunk(sink, resolved.requestedModel(), parsed.contentDelta(), null, null);
+                            emitChunk(sink, resolved.requestedModel(), parsed.contentDelta(), null, null, null);
                         }
                     }
 
                     @Override
                     public void onThinking(String thinking) {
-                        // OpenAI 格式暂不输出 thinking
+                        outputLength[0] += thinking.length();
+                        emitChunk(sink, resolved.requestedModel(), null, thinking, null, null);
                     }
 
                     @Override
@@ -168,7 +196,7 @@ public class OpenAiController {
                         delta.put("id", callId);
                         delta.put("type", "function");
                         delta.put("function", JSONObject.of("name", originalName, "arguments", ""));
-                        emitChunk(sink, resolved.requestedModel(), null, delta, null);
+                        emitChunk(sink, resolved.requestedModel(), null, null, delta, null);
                     }
 
                     @Override
@@ -176,7 +204,7 @@ public class OpenAiController {
                         JSONObject delta = new JSONObject();
                         delta.put("index", toolIndex[0]);
                         delta.put("function", JSONObject.of("arguments", inputDelta));
-                        emitChunk(sink, resolved.requestedModel(), null, delta, null);
+                        emitChunk(sink, resolved.requestedModel(), null, null, delta, null);
                     }
 
                     @Override
@@ -191,15 +219,31 @@ public class OpenAiController {
                     public void onCredits(double credits) {}
 
                     @Override
+                    public void onContextUsage(double percentage) {
+                        contextUsagePct[0] = percentage;
+                    }
+
+                    @Override
                     public void onComplete() {
                         if (thinkingParser != null) {
                             ThinkingParser.ParseResult last = thinkingParser.finish();
+                            if (last.hasThinking()) {
+                                emitChunk(sink, resolved.requestedModel(), null, last.thinkingDelta(), null, null);
+                            }
                             if (last.hasContent()) {
-                                emitChunk(sink, resolved.requestedModel(), last.contentDelta(), null, null);
+                                emitChunk(sink, resolved.requestedModel(), last.contentDelta(), null, null, null);
                             }
                         }
+                        // 从 contextUsagePercentage 推算 token
+                        if (traceCtx.inputTokens() == 0 && contextUsagePct[0] > 0) {
+                            int outputTokens = Math.max(1, outputLength[0] / 4);
+                            int totalTokens = (int) (contextUsagePct[0] / 100.0 * maxTokens);
+                            int inputTokens = Math.max(0, totalTokens - outputTokens);
+                            traceCtx.recordTokenUsage(inputTokens, outputTokens, traceCtx.credits());
+                        }
+
                         String finishReason = toolCallIds.isEmpty() ? "stop" : "tool_calls";
-                        emitChunk(sink, resolved.requestedModel(), null, null, finishReason);
+                        emitChunk(sink, resolved.requestedModel(), null, null, null, finishReason);
                         sink.tryEmitNext("data: [DONE]\n\n");
                         sink.tryEmitComplete();
 
@@ -231,8 +275,9 @@ public class OpenAiController {
     }
 
     private void emitChunk(Sinks.Many<String> sink, String model,
-                            String content, JSONObject toolCallDelta, String finishReason) {
-        JSONObject chunk = translator.toOpenAiStreamChunk(model, content, toolCallDelta, finishReason);
+                            String content, String reasoningContent,
+                            JSONObject toolCallDelta, String finishReason) {
+        JSONObject chunk = translator.toOpenAiStreamChunk(model, content, reasoningContent, toolCallDelta, finishReason);
         sink.tryEmitNext("data: " + chunk.toJSONString() + "\n\n");
     }
 
@@ -243,9 +288,13 @@ public class OpenAiController {
                                            ModelResolver.ResolveResult resolved,
                                            Map<String, String> toolNameMap) {
         StringBuilder contentBuilder = new StringBuilder();
+        StringBuilder thinkingBuilder = new StringBuilder();
         Map<String, String> reverseToolMap = reverseMap(toolNameMap);
         JSONArray toolCalls = new JSONArray();
         ThinkingParser thinkingParser = resolved.thinking() ? new ThinkingParser() : null;
+        final double[] contextUsagePct = {-1};
+        ModelResolver.ModelInfo modelInfo = modelResolver.getModelInfo(resolved.kiroModelId());
+        final int maxTokensVal = modelInfo != null ? modelInfo.maxTokens : 200000;
 
         final int[] toolIndex = {0};
         Map<String, JSONObject> toolCallBuffers = new LinkedHashMap<>();
@@ -259,13 +308,18 @@ public class OpenAiController {
                         return;
                     }
                     ThinkingParser.ParseResult parsed = thinkingParser.feed(text);
+                    if (parsed.hasThinking()) {
+                        thinkingBuilder.append(parsed.thinkingDelta());
+                    }
                     if (parsed.hasContent()) {
                         contentBuilder.append(parsed.contentDelta());
                     }
                 }
 
                 @Override
-                public void onThinking(String thinking) {}
+                public void onThinking(String thinking) {
+                    thinkingBuilder.append(thinking);
+                }
 
                 @Override
                 public void onToolUseStart(String toolUseId, String name) {
@@ -302,9 +356,17 @@ public class OpenAiController {
                 public void onCredits(double credits) {}
 
                 @Override
+                public void onContextUsage(double percentage) {
+                    contextUsagePct[0] = percentage;
+                }
+
+                @Override
                 public void onComplete() {
                     if (thinkingParser != null) {
                         ThinkingParser.ParseResult last = thinkingParser.finish();
+                        if (last.hasThinking()) {
+                            thinkingBuilder.append(last.thinkingDelta());
+                        }
                         if (last.hasContent()) {
                             contentBuilder.append(last.contentDelta());
                         }
@@ -317,10 +379,21 @@ public class OpenAiController {
                 }
             });
 
+            // thinking + 正文都计入 output
+            if (traceCtx.inputTokens() == 0 && contextUsagePct[0] > 0) {
+                int totalOutputLen = contentBuilder.length() + thinkingBuilder.length();
+                int outputTokens = Math.max(1, totalOutputLen / 4);
+                int totalTokens = (int) (contextUsagePct[0] / 100.0 * maxTokensVal);
+                int inputTokens = Math.max(0, totalTokens - outputTokens);
+                traceCtx.recordTokenUsage(inputTokens, outputTokens, traceCtx.credits());
+            }
+
             // 记录成功
             String finishReason = toolCalls.isEmpty() ? "stop" : "tool_calls";
+            String reasoningContent = thinkingBuilder.isEmpty() ? null : thinkingBuilder.toString();
             JSONObject response = translator.toOpenAiResponse(
-                    contentBuilder.toString(), toolCalls.isEmpty() ? null : toolCalls,
+                    contentBuilder.toString(), reasoningContent,
+                    toolCalls.isEmpty() ? null : toolCalls,
                     traceCtx.inputTokens(), traceCtx.outputTokens(),
                     resolved.requestedModel(), finishReason
             );
