@@ -77,7 +77,16 @@ public class DatabaseConfig {
     private void migrate() {
         // v2: request_logs 增加 conversation_id 列
         tryAddColumn("request_logs", "conversation_id", "TEXT");
+        tryExecute("CREATE INDEX IF NOT EXISTS idx_request_logs_conversation ON request_logs(conversation_id)");
         backfillConversationId();
+    }
+
+    private void tryExecute(String sql) {
+        try {
+            jdbc.execute(sql);
+        } catch (Exception e) {
+            // 已存在则忽略
+        }
     }
 
     private void tryAddColumn(String table, String column, String type) {
