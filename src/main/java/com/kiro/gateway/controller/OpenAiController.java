@@ -151,6 +151,10 @@ public class OpenAiController {
         Map<String, String> reverseToolMap = reverseMap(toolNameMap);
         ThinkingParser thinkingParser = resolved.thinking() ? new ThinkingParser() : null;
 
+        // 整个流共享同一个 id 和 created
+        final String completionId = translator.generateCompletionId();
+        final long created = System.currentTimeMillis() / 1000;
+
         // 工具调用状态
         final int[] toolIndex = {0};
         final Map<String, String> toolCallIds = new LinkedHashMap<>();
@@ -167,22 +171,22 @@ public class OpenAiController {
                     public void onText(String text) {
                         outputLength[0] += text.length();
                         if (thinkingParser == null) {
-                            emitChunk(sink, resolved.requestedModel(), text, null, null, null);
+                            emitChunk(sink, completionId, created, resolved.requestedModel(), text, null, null, null, 0, 0);
                             return;
                         }
                         ThinkingParser.ParseResult parsed = thinkingParser.feed(text);
                         if (parsed.hasThinking()) {
-                            emitChunk(sink, resolved.requestedModel(), null, parsed.thinkingDelta(), null, null);
+                            emitChunk(sink, completionId, created, resolved.requestedModel(), null, parsed.thinkingDelta(), null, null, 0, 0);
                         }
                         if (parsed.hasContent()) {
-                            emitChunk(sink, resolved.requestedModel(), parsed.contentDelta(), null, null, null);
+                            emitChunk(sink, completionId, created, resolved.requestedModel(), parsed.contentDelta(), null, null, null, 0, 0);
                         }
                     }
 
                     @Override
                     public void onThinking(String thinking) {
                         outputLength[0] += thinking.length();
-                        emitChunk(sink, resolved.requestedModel(), null, thinking, null, null);
+                        emitChunk(sink, completionId, created, resolved.requestedModel(), null, thinking, null, null, 0, 0);
                     }
 
                     @Override
@@ -196,7 +200,7 @@ public class OpenAiController {
                         delta.put("id", callId);
                         delta.put("type", "function");
                         delta.put("function", JSONObject.of("name", originalName, "arguments", ""));
-                        emitChunk(sink, resolved.requestedModel(), null, null, delta, null);
+                        emitChunk(sink, completionId, created, resolved.requestedModel(), null, null, delta, null, 0, 0);
                     }
 
                     @Override
@@ -204,7 +208,7 @@ public class OpenAiController {
                         JSONObject delta = new JSONObject();
                         delta.put("index", toolIndex[0]);
                         delta.put("function", JSONObject.of("arguments", inputDelta));
-                        emitChunk(sink, resolved.requestedModel(), null, null, delta, null);
+                        emitChunk(sink, completionId, created, resolved.requestedModel(), null, null, delta, null, 0, 0);
                     }
 
                     @Override
@@ -228,10 +232,10 @@ public class OpenAiController {
                         if (thinkingParser != null) {
                             ThinkingParser.ParseResult last = thinkingParser.finish();
                             if (last.hasThinking()) {
-                                emitChunk(sink, resolved.requestedModel(), null, last.thinkingDelta(), null, null);
+                                emitChunk(sink, completionId, created, resolved.requestedModel(), null, last.thinkingDelta(), null, null, 0, 0);
                             }
                             if (last.hasContent()) {
-                                emitChunk(sink, resolved.requestedModel(), last.contentDelta(), null, null, null);
+                                emitChunk(sink, completionId, created, resolved.requestedModel(), last.contentDelta(), null, null, null, 0, 0);
                             }
                         }
                         // 从 contextUsagePercentage 推算 token
@@ -243,7 +247,8 @@ public class OpenAiController {
                         }
 
                         String finishReason = toolCallIds.isEmpty() ? "stop" : "tool_calls";
-                        emitChunk(sink, resolved.requestedModel(), null, null, null, finishReason);
+                        emitChunk(sink, completionId, created, resolved.requestedModel(), null, null, null, finishReason,
+                                traceCtx.inputTokens(), traceCtx.outputTokens());
                         sink.tryEmitNext("data: [DONE]\n\n");
                         sink.tryEmitComplete();
 
@@ -274,10 +279,12 @@ public class OpenAiController {
         return sink.asFlux();
     }
 
-    private void emitChunk(Sinks.Many<String> sink, String model,
-                            String content, String reasoningContent,
-                            JSONObject toolCallDelta, String finishReason) {
-        JSONObject chunk = translator.toOpenAiStreamChunk(model, content, reasoningContent, toolCallDelta, finishReason);
+    private void emitChunk(Sinks.Many<String> sink, String completionId, long created,
+                            String model, String content, String reasoningContent,
+                            JSONObject toolCallDelta, String finishReason,
+                            int inputTokens, int outputTokens) {
+        JSONObject chunk = translator.toOpenAiStreamChunk(completionId, created, model, content,
+                reasoningContent, toolCallDelta, finishReason, inputTokens, outputTokens);
         sink.tryEmitNext("data: " + chunk.toJSONString() + "\n\n");
     }
 

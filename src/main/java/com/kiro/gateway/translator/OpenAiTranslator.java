@@ -178,11 +178,30 @@ public class OpenAiTranslator implements RequestTranslator {
     }
 
     /**
-     * 构建 SSE chunk（流式）
+     * 生成流式 completion id（整个流共享同一个）
      */
-    public JSONObject toOpenAiStreamChunk(String model, String deltaContent,
+    public String generateCompletionId() {
+        return "chatcmpl-" + UUID.randomUUID().toString().replace("-", "").substring(0, 24);
+    }
+
+    /**
+     * 构建 SSE chunk（流式）
+     *
+     * @param completionId 整个流共享的 completion id
+     * @param created      整个流共享的创建时间戳（秒）
+     * @param model        模型名称
+     * @param deltaContent 正文增量
+     * @param reasoningContent thinking 增量
+     * @param toolCallDelta 工具调用增量
+     * @param finishReason  结束原因（仅最终 chunk）
+     * @param inputTokens   输入 token 数（仅最终 chunk，<= 0 时不发送 usage）
+     * @param outputTokens  输出 token 数（仅最终 chunk）
+     */
+    public JSONObject toOpenAiStreamChunk(String completionId, long created,
+                                           String model, String deltaContent,
                                            String reasoningContent,
-                                           JSONObject toolCallDelta, String finishReason) {
+                                           JSONObject toolCallDelta, String finishReason,
+                                           int inputTokens, int outputTokens) {
         JSONObject delta = new JSONObject();
         if (reasoningContent != null) {
             delta.put("reasoning_content", reasoningContent);
@@ -202,13 +221,23 @@ public class OpenAiTranslator implements RequestTranslator {
             choice.put("finish_reason", finishReason);
         }
 
-        return JSONObject.of(
-                "id", "chatcmpl-" + UUID.randomUUID().toString().replace("-", "").substring(0, 24), //
+        JSONObject chunk = JSONObject.of(
+                "id", completionId, //
                 "object", "chat.completion.chunk", //
-                "created", System.currentTimeMillis() / 1000, //
+                "created", created, //
                 "model", model, //
                 "choices", JSONArray.of(choice) //
         );
+
+        // 最终 chunk 附带 usage
+        if (finishReason != null && (inputTokens > 0 || outputTokens > 0)) {
+            chunk.put("usage", JSONObject.of(
+                    "prompt_tokens", inputTokens, //
+                    "completion_tokens", outputTokens, //
+                    "total_tokens", inputTokens + outputTokens //
+            ));
+        }
+        return chunk;
     }
 
     // ==================== 辅助方法 ====================

@@ -130,13 +130,17 @@ public class ClaudeController {
         ThinkingParser thinkingParser = thinkingEnabled ? new ThinkingParser() : null;
         String thinkingSignature = "sig_" + UUID.randomUUID().toString().replace("-", "");
 
-        // 发送 message_start
-        emitEvent(sink, "message_start", JSONObject.of("type", "message_start", //
-                "message", JSONObject.of("id", "msg_" + UUID.randomUUID().toString().replace("-", "").substring(0, 16), //
-                        "type", "message", //
-                        "role", "assistant", //
-                        "model", resolved.requestedModel() //
-                )));
+        // 发送 message_start（按 Anthropic 规范包含完整 Message 对象）
+        JSONObject msgObj = new JSONObject();
+        msgObj.put("id", "msg_" + UUID.randomUUID().toString().replace("-", "").substring(0, 24));
+        msgObj.put("type", "message");
+        msgObj.put("role", "assistant");
+        msgObj.put("content", new com.alibaba.fastjson2.JSONArray());
+        msgObj.put("model", resolved.requestedModel());
+        msgObj.put("stop_reason", null);
+        msgObj.put("stop_sequence", null);
+        msgObj.put("usage", JSONObject.of("input_tokens", 0, "output_tokens", 0));
+        emitEvent(sink, "message_start", JSONObject.of("type", "message_start", "message", msgObj));
 
         // 内容块索引和状态跟踪
         final int[] blockIndex = {0};
@@ -312,7 +316,10 @@ public class ClaudeController {
                         String stopReason = hasToolUse[0] ? "tool_use" : "end_turn";
                         JSONObject msgDelta = new JSONObject();
                         msgDelta.put("type", "message_delta");
-                        msgDelta.put("delta", JSONObject.of("stop_reason", stopReason));
+                        JSONObject deltaObj = new JSONObject();
+                        deltaObj.put("stop_reason", stopReason);
+                        deltaObj.put("stop_sequence", null);
+                        msgDelta.put("delta", deltaObj);
                         msgDelta.put("usage", JSONObject.of( //
                                 "input_tokens", traceCtx.inputTokens(), //
                                 "output_tokens", traceCtx.outputTokens() //
