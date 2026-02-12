@@ -281,7 +281,9 @@ public class ClaudeController {
                     public void onUsage(int inputTokens, int outputTokens) {}
 
                     @Override
-                    public void onCredits(double credits) {}
+                    public void onCredits(double c) {
+                        traceCtx.recordCredits(c);
+                    }
 
                     @Override
                     public void onContextUsage(double percentage) {
@@ -448,7 +450,9 @@ public class ClaudeController {
                 public void onUsage(int inputTokens, int outputTokens) {}
 
                 @Override
-                public void onCredits(double credits) {}
+                public void onCredits(double c) {
+                    traceCtx.recordCredits(c);
+                }
 
                 @Override
                 public void onContextUsage(double percentage) {

@@ -107,6 +107,13 @@ public class TraceContext {
     }
 
     /**
+     * 记录 credits 消耗
+     */
+    public void recordCredits(double credits) {
+        this.credits = credits;
+    }
+
+    /**
      * 记录客户端响应（阶段 ④）
      */
     public void recordClientResponse(String responseBody, int status) {
