@@ -188,6 +188,7 @@ public class KiroApiClient {
 
             @Override
             public void onCredits(double credits) {
+                traceCtx.appendKiroEvent("{\"type\":\"metering\",\"credits\":" + credits + "}");
                 traceCtx.recordTokenUsage(traceCtx.inputTokens(), traceCtx.outputTokens(), credits);
                 callback.onCredits(credits);
             }
