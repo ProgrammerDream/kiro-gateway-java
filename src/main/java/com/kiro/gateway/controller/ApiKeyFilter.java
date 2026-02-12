@@ -1,7 +1,7 @@
 package com.kiro.gateway.controller;
 
 import com.kiro.gateway.config.AppProperties;
-import com.kiro.gateway.config.DatabaseConfig;
+import com.kiro.gateway.dao.ApiKeyDAO;
 import com.kiro.gateway.trace.TraceContext;
 import com.kiro.gateway.trace.TraceFilter;
 import org.slf4j.Logger;
@@ -27,11 +27,11 @@ public class ApiKeyFilter implements WebFilter {
     private static final Logger log = LoggerFactory.getLogger(ApiKeyFilter.class);
 
     private final AppProperties properties;
-    private final DatabaseConfig db;
+    private final ApiKeyDAO apiKeyDAO;
 
-    public ApiKeyFilter(AppProperties properties, DatabaseConfig db) {
+    public ApiKeyFilter(AppProperties properties, ApiKeyDAO apiKeyDAO) {
         this.properties = properties;
-        this.db = db;
+        this.apiKeyDAO = apiKeyDAO;
     }
 
     @Override
@@ -64,7 +64,7 @@ public class ApiKeyFilter implements WebFilter {
         }
 
         // 验证 API Key
-        if (!db.validateApiKey(apiKey)) {
+        if (!apiKeyDAO.validate(apiKey)) {
             log.warn("无效的 API Key: {}***", apiKey.substring(0, Math.min(8, apiKey.length())));
             return unauthorized(exchange, "无效的 API Key");
         }

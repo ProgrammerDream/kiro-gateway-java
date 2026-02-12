@@ -1,7 +1,8 @@
 package com.kiro.gateway.scheduler;
 
 import com.kiro.gateway.config.AppProperties;
-import com.kiro.gateway.config.DatabaseConfig;
+import com.kiro.gateway.dao.RequestLogDAO;
+import com.kiro.gateway.dao.TraceDAO;
 import com.kiro.gateway.model.ModelResolver;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -21,12 +22,15 @@ public class BackgroundScheduler {
     private static final Logger log = LoggerFactory.getLogger(BackgroundScheduler.class);
 
     private final AppProperties properties;
-    private final DatabaseConfig db;
+    private final RequestLogDAO requestLogDAO;
+    private final TraceDAO traceDAO;
     private final ModelResolver modelResolver;
 
-    public BackgroundScheduler(AppProperties properties, DatabaseConfig db, ModelResolver modelResolver) {
+    public BackgroundScheduler(AppProperties properties, RequestLogDAO requestLogDAO,
+                               TraceDAO traceDAO, ModelResolver modelResolver) {
         this.properties = properties;
-        this.db = db;
+        this.requestLogDAO = requestLogDAO;
+        this.traceDAO = traceDAO;
         this.modelResolver = modelResolver;
     }
 
@@ -36,7 +40,7 @@ public class BackgroundScheduler {
     @Scheduled(cron = "0 0 3 * * ?")
     public void cleanupRequestLogs() {
         int retention = properties.getLogging().getRequestLogRetention();
-        int deleted = db.cleanupRequestLogs(retention);
+        int deleted = requestLogDAO.cleanup(retention);
         if (deleted > 0) {
             log.info("清理请求日志: 删除 {} 条, 保留最近 {} 条", deleted, retention);
         }
@@ -48,7 +52,7 @@ public class BackgroundScheduler {
     @Scheduled(cron = "0 10 3 * * ?")
     public void cleanupTraces() {
         int retention = properties.getLogging().getTraceRetention();
-        int deleted = db.cleanupTraces(retention);
+        int deleted = traceDAO.cleanup(retention);
         if (deleted > 0) {
             log.info("清理追踪日志: 删除 {} 条, 保留最近 {} 条", deleted, retention);
         }

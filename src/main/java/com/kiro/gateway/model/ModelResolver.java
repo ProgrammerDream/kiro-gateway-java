@@ -1,15 +1,12 @@
 package com.kiro.gateway.model;
 
 import com.kiro.gateway.config.AppProperties;
-import com.kiro.gateway.config.DatabaseConfig;
+import com.kiro.gateway.dao.ModelDAO;
 import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
-import java.sql.Connection;
-import java.sql.ResultSet;
-import java.sql.Statement;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -25,7 +22,7 @@ public class ModelResolver {
     private static final Logger log = LoggerFactory.getLogger(ModelResolver.class);
 
     private final AppProperties properties;
-    private final DatabaseConfig db;
+    private final ModelDAO modelDAO;
 
     // 模型映射规则（按优先级排序）
     private final List<MappingRule> mappingRules = new ArrayList<>();
@@ -34,9 +31,9 @@ public class ModelResolver {
     // 已解析缓存
     private final Map<String, ResolveResult> resolveCache = new ConcurrentHashMap<>();
 
-    public ModelResolver(AppProperties properties, DatabaseConfig db) {
+    public ModelResolver(AppProperties properties, ModelDAO modelDAO) {
         this.properties = properties;
-        this.db = db;
+        this.modelDAO = modelDAO;
     }
 
     @PostConstruct
@@ -124,43 +121,16 @@ public class ModelResolver {
 
     private void loadModels() {
         modelCache.clear();
-        String sql = "SELECT * FROM models ORDER BY display_order, id";
-        try (Connection conn = db.getConnection();
-             Statement stmt = conn.createStatement();
-             ResultSet rs = stmt.executeQuery(sql)) {
-            while (rs.next()) {
-                ModelInfo model = new ModelInfo(
-                        rs.getString("id"),
-                        rs.getString("display_name"),
-                        rs.getInt("max_tokens"),
-                        rs.getString("owned_by"),
-                        rs.getInt("enabled") == 1,
-                        rs.getInt("display_order")
-                );
-                modelCache.put(model.id, model);
-            }
-        } catch (Exception e) {
-            log.error("加载模型列表失败", e);
+        for (ModelDAO.ModelInfo m : modelDAO.findAllModels()) {
+            ModelInfo model = new ModelInfo(m.id(), m.displayName(), m.maxTokens(), m.ownedBy(), m.enabled(), m.displayOrder());
+            modelCache.put(model.id, model);
         }
     }
 
     private void loadMappings() {
         mappingRules.clear();
-        String sql = "SELECT * FROM model_mappings WHERE enabled = 1 ORDER BY priority DESC";
-        try (Connection conn = db.getConnection();
-             Statement stmt = conn.createStatement();
-             ResultSet rs = stmt.executeQuery(sql)) {
-            while (rs.next()) {
-                mappingRules.add(new MappingRule(
-                        rs.getString("external_pattern"),
-                        rs.getString("internal_id"),
-                        rs.getString("match_type"),
-                        rs.getInt("priority"),
-                        rs.getInt("enabled") == 1
-                ));
-            }
-        } catch (Exception e) {
-            log.error("加载模型映射失败", e);
+        for (ModelDAO.MappingRule m : modelDAO.findEnabledMappings()) {
+            mappingRules.add(new MappingRule(m.externalPattern(), m.internalId(), m.matchType(), m.priority(), m.enabled()));
         }
     }
 

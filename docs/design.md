@@ -813,3 +813,48 @@ public Flux<ServerSentEvent<String>> sseEvents() {
 
 ### 设置
 ![设置](images/settings.png)
+
+---
+
+## 十三、DAO 层重构方案
+
+将 `DatabaseConfig.java`（561行 God Class）重构为 Spring JdbcTemplate + HikariCP 连接池 + 按实体拆分的独立 DAO 类。
+
+### 改造前问题
+
+| 问题 | 说明 |
+|------|------|
+| 无连接池 | 每次 `DriverManager.getConnection()` 创建新连接 + 重复设置 PRAGMA |
+| God Class | 配置初始化 + 4类 DAO + 4个 Record，全部 561 行 |
+| 样板代码 | 20+ 个方法重复 `try(conn; ps) { ... } catch { log.error }` |
+| 吞异常 | 所有 DAO 方法 catch 后仅 log，上层无法感知失败 |
+| 直接 getConnection | `ModelResolver` 直接调用 `db.getConnection()` 手写 SQL，绕过 DAO 抽象 |
+
+### 改造方案
+
+- **HikariCP 连接池**：Spring Boot 自带，配置 DataSource 即可，PRAGMA 只在连接初始化时执行一次
+- **JdbcTemplate**：消除所有手动连接管理 + try-catch 样板代码
+- **按实体拆分 DAO**：每个实体一个类，职责清晰
+- **异常透传**：Spring 自动将 SQLException → `DataAccessException`（RuntimeException），无需手动 catch
+
+### 新增 DAO 类（`com.kiro.gateway.dao` 包）
+
+| 类名 | 职责 |
+|------|------|
+| `RequestLogDAO` | 请求日志 CRUD |
+| `TraceDAO` | 追踪日志 CRUD |
+| `AccountDAO` | 账号 CRUD |
+| `ApiKeyDAO` | API Key 查询/验证 |
+| `ModelDAO` | 模型+映射查询 |
+
+### 精简后的文件
+
+| 文件 | 变更 |
+|------|------|
+| `DatabaseConfig.java` | 仅保留 `initSchema()` + `initDefaults()`，改用 JdbcTemplate 执行（561行→132行） |
+| `ModelResolver.java` | 删除 `db.getConnection()` 手写 SQL，改用 `ModelDAO` |
+| `AdminController.java` | 注入 `RequestLogDAO` / `TraceDAO` / `ApiKeyDAO` |
+| `AccountPool.java` | 注入 `AccountDAO` |
+| `TraceStore.java` | 注入 `RequestLogDAO` / `TraceDAO` |
+| `ApiKeyFilter.java` | 注入 `ApiKeyDAO` |
+| `BackgroundScheduler.java` | 注入 `RequestLogDAO` / `TraceDAO` |

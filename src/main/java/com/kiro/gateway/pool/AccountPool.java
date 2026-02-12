@@ -1,7 +1,7 @@
 package com.kiro.gateway.pool;
 
 import com.kiro.gateway.config.AppProperties;
-import com.kiro.gateway.config.DatabaseConfig;
+import com.kiro.gateway.dao.AccountDAO;
 import com.kiro.gateway.exception.NoAvailableAccountException;
 import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
@@ -24,15 +24,15 @@ public class AccountPool {
     private static final Logger log = LoggerFactory.getLogger(AccountPool.class);
 
     private final AppProperties properties;
-    private final DatabaseConfig db;
+    private final AccountDAO accountDAO;
     private final Map<String, Account> accounts = new ConcurrentHashMap<>();
     private final AtomicInteger roundRobinIndex = new AtomicInteger(0);
 
     private volatile SelectionStrategy strategy;
 
-    public AccountPool(AppProperties properties, DatabaseConfig db) {
+    public AccountPool(AppProperties properties, AccountDAO accountDAO) {
         this.properties = properties;
-        this.db = db;
+        this.accountDAO = accountDAO;
     }
 
     @PostConstruct
@@ -41,8 +41,8 @@ public class AccountPool {
         setStrategy(properties.getPoolStrategy());
 
         // 从数据库加载账号
-        List<DatabaseConfig.AccountRow> rows = db.getAllAccounts();
-        for (DatabaseConfig.AccountRow row : rows) {
+        List<AccountDAO.AccountRow> rows = accountDAO.findAll();
+        for (AccountDAO.AccountRow row : rows) {
             Account account = new Account(
                     row.id(), row.name(), row.credentials(), row.authMethod(),
                     row.status(), row.requestCount(), row.successCount(), row.errorCount(),
@@ -91,7 +91,7 @@ public class AccountPool {
         String id = UUID.randomUUID().toString();
         Account account = new Account(id, name, credentials, authMethod);
         accounts.put(id, account);
-        db.insertAccount(id, name, credentials, authMethod);
+        accountDAO.insert(id, name, credentials, authMethod);
         log.info("添加账号: id={}, name={}", id, name);
         return id;
     }
@@ -114,7 +114,7 @@ public class AccountPool {
                 old.createdAt().toString()
         );
         accounts.put(id, updated);
-        db.updateAccountInfo(id, name, credentials, authMethod);
+        accountDAO.updateInfo(id, name, credentials, authMethod);
         // 清除旧 token 缓存
         log.info("更新账号: id={}, name={}", id, name);
         return true;
@@ -126,7 +126,7 @@ public class AccountPool {
     public boolean removeAccount(String id) {
         Account removed = accounts.remove(id);
         if (removed != null) {
-            db.deleteAccount(id);
+            accountDAO.delete(id);
             log.info("删除账号: id={}, name={}", id, removed.name());
             return true;
         }
@@ -215,7 +215,7 @@ public class AccountPool {
     }
 
     private void persistAccountStats(Account account) {
-        db.updateAccountStats(
+        accountDAO.updateStats(
                 account.id(), account.requestCount(), account.successCount(),
                 account.errorCount(), account.consecutiveErrors(),
                 account.inputTokensTotal(), account.outputTokensTotal(),

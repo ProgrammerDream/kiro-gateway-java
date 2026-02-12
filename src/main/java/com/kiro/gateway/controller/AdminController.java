@@ -4,7 +4,9 @@ import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import com.kiro.gateway.auth.AuthService;
 import com.kiro.gateway.config.AppProperties;
-import com.kiro.gateway.config.DatabaseConfig;
+import com.kiro.gateway.dao.ApiKeyDAO;
+import com.kiro.gateway.dao.RequestLogDAO;
+import com.kiro.gateway.dao.TraceDAO;
 import com.kiro.gateway.model.ModelResolver;
 import com.kiro.gateway.pool.Account;
 import com.kiro.gateway.pool.AccountPool;
@@ -36,7 +38,9 @@ public class AdminController {
     private static final Logger log = LoggerFactory.getLogger(AdminController.class);
 
     private final AccountPool accountPool;
-    private final DatabaseConfig db;
+    private final RequestLogDAO requestLogDAO;
+    private final TraceDAO traceDAO;
+    private final ApiKeyDAO apiKeyDAO;
     private final AppProperties properties;
     private final ModelResolver modelResolver;
     private final AuthService authService;
@@ -46,11 +50,14 @@ public class AdminController {
     private final Sinks.Many<ServerSentEvent<String>> eventSink =
             Sinks.many().multicast().onBackpressureBuffer(256);
 
-    public AdminController(AccountPool accountPool, DatabaseConfig db,
+    public AdminController(AccountPool accountPool, RequestLogDAO requestLogDAO,
+                           TraceDAO traceDAO, ApiKeyDAO apiKeyDAO,
                            AppProperties properties, ModelResolver modelResolver,
                            AuthService authService, KiroRestApi kiroRestApi) {
         this.accountPool = accountPool;
-        this.db = db;
+        this.requestLogDAO = requestLogDAO;
+        this.traceDAO = traceDAO;
+        this.apiKeyDAO = apiKeyDAO;
         this.properties = properties;
         this.modelResolver = modelResolver;
         this.authService = authService;
@@ -74,7 +81,7 @@ public class AdminController {
     @GetMapping("/dashboard")
     public Mono<String> dashboard() {
         AccountPool.PoolStats stats = accountPool.getStats();
-        int requestLogCount = db.getRequestLogCount();
+        int requestLogCount = requestLogDAO.count();
 
         JSONObject result = new JSONObject();
         result.put("accounts", JSONObject.of( //
@@ -169,11 +176,11 @@ public class AdminController {
     @GetMapping("/request-logs")
     public Mono<String> getRequestLogs(@RequestParam(defaultValue = "20") int limit,
                                         @RequestParam(defaultValue = "0") int offset) {
-        List<DatabaseConfig.RequestLogRow> logs = db.getRequestLogs(limit, offset);
-        int total = db.getRequestLogCount();
+        List<RequestLogDAO.RequestLogRow> logs = requestLogDAO.findPage(limit, offset);
+        int total = requestLogDAO.count();
 
         JSONArray arr = new JSONArray();
-        for (DatabaseConfig.RequestLogRow r : logs) {
+        for (RequestLogDAO.RequestLogRow r : logs) {
             JSONObject item = new JSONObject();
             item.put("id", r.id());
             item.put("timestamp", r.timestamp());
@@ -201,7 +208,7 @@ public class AdminController {
 
     @GetMapping("/traces/{traceId}")
     public Mono<String> getTrace(@PathVariable String traceId) {
-        DatabaseConfig.TraceRow trace = db.getTraceByTraceId(traceId);
+        TraceDAO.TraceRow trace = traceDAO.findByTraceId(traceId);
         if (trace == null) {
             return Mono.just(JSONObject.of("error", "追踪记录不存在").toJSONString());
         }
@@ -364,9 +371,9 @@ public class AdminController {
 
     @GetMapping("/api-keys")
     public Mono<String> listApiKeys() {
-        List<DatabaseConfig.ApiKeyRow> keys = db.getAllApiKeys();
+        List<ApiKeyDAO.ApiKeyRow> keys = apiKeyDAO.findAll();
         JSONArray arr = new JSONArray();
-        for (DatabaseConfig.ApiKeyRow k : keys) {
+        for (ApiKeyDAO.ApiKeyRow k : keys) {
             arr.add(JSONObject.of("key", k.key(), "name", k.name(), "createdAt", k.createdAt()));
         }
         return Mono.just(arr.toJSONString());

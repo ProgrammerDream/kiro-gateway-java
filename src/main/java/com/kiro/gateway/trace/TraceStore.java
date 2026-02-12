@@ -1,6 +1,7 @@
 package com.kiro.gateway.trace;
 
-import com.kiro.gateway.config.DatabaseConfig;
+import com.kiro.gateway.dao.RequestLogDAO;
+import com.kiro.gateway.dao.TraceDAO;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -19,11 +20,13 @@ public class TraceStore {
     private static final Logger log = LoggerFactory.getLogger(TraceStore.class);
     private static final int BUFFER_SIZE = 1000;
 
-    private final DatabaseConfig db;
+    private final RequestLogDAO requestLogDAO;
+    private final TraceDAO traceDAO;
     private final BlockingQueue<TraceLog> recentTraces = new ArrayBlockingQueue<>(BUFFER_SIZE);
 
-    public TraceStore(DatabaseConfig db) {
-        this.db = db;
+    public TraceStore(RequestLogDAO requestLogDAO, TraceDAO traceDAO) {
+        this.requestLogDAO = requestLogDAO;
+        this.traceDAO = traceDAO;
     }
 
     /**
@@ -47,7 +50,7 @@ public class TraceStore {
         save(traceLog);
 
         // 同时写入请求日志表
-        db.insertRequestLog(
+        requestLogDAO.insert(
                 traceLog.traceId(), traceLog.apiType(), traceLog.model(),
                 traceLog.accountId(), accountName,
                 traceLog.inputTokens(), traceLog.outputTokens(), traceLog.credits(),
@@ -59,14 +62,14 @@ public class TraceStore {
     /**
      * 获取追踪详情
      */
-    public DatabaseConfig.TraceRow getTrace(String traceId) {
-        return db.getTraceByTraceId(traceId);
+    public TraceDAO.TraceRow getTrace(String traceId) {
+        return traceDAO.findByTraceId(traceId);
     }
 
     private void persistAsync(TraceLog t) {
         // 当前使用同步写入，后续可改为异步队列
         try {
-            db.insertTrace(
+            traceDAO.insert(
                     t.traceId(), t.apiType(), t.model(), t.accountId(),
                     t.durationMs(), t.success(),
                     t.clientRequest(), t.clientHeaders(),

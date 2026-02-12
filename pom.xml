@@ -44,6 +44,12 @@
             <version>${fastjson2.version}</version>
         </dependency>
 
+        <!-- Spring JDBC + HikariCP -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-jdbc</artifactId>
+        </dependency>
+
         <!-- SQLite JDBC -->
         <dependency>
             <groupId>org.xerial</groupId>
