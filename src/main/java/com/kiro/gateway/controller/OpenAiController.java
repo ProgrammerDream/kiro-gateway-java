@@ -179,6 +179,10 @@ public class OpenAiController {
                             emitChunk(sink, completionId, created, resolved.requestedModel(), null, parsed.thinkingDelta(), null, null, 0, 0);
                         }
                         if (parsed.hasContent()) {
+                            // <thinking> 标签前的空白不需要发送
+                            if (parsed.hasThinking() && parsed.contentDelta().isBlank()) {
+                                return;
+                            }
                             emitChunk(sink, completionId, created, resolved.requestedModel(), parsed.contentDelta(), null, null, null, 0, 0);
                         }
                     }
@@ -319,7 +323,10 @@ public class OpenAiController {
                         thinkingBuilder.append(parsed.thinkingDelta());
                     }
                     if (parsed.hasContent()) {
-                        contentBuilder.append(parsed.contentDelta());
+                        // <thinking> 标签前的空白不计入正文
+                        if (!parsed.hasThinking() || !parsed.contentDelta().isBlank()) {
+                            contentBuilder.append(parsed.contentDelta());
+                        }
                     }
                 }
 

@@ -206,11 +206,14 @@ public class ClaudeController {
                             return;
                         }
                         ThinkingParser.ParseResult parsed = thinkingParser.feed(text);
-                        // ThinkingParser 从 <thinking> 标签中提取的 thinking 内容
                         if (parsed.hasThinking()) {
                             onThinking(parsed.thinkingDelta());
                         }
                         if (parsed.hasContent()) {
+                            // <thinking> 标签前的空白不应触发 text 块开启，否则会关闭刚开启的 thinking 块
+                            if (parsed.hasThinking() && parsed.contentDelta().isBlank()) {
+                                return;
+                            }
                             ensureTextBlockStarted();
                             emitEvent(sink, "content_block_delta", JSONObject.of("type", "content_block_delta", //
                                     "index", blockIndex[0], //
@@ -390,7 +393,10 @@ public class ClaudeController {
                         thinkingBuilder.append(parsed.thinkingDelta());
                     }
                     if (parsed.hasContent()) {
-                        contentBuilder.append(parsed.contentDelta());
+                        // <thinking> 标签前的空白不计入正文
+                        if (!parsed.hasThinking() || !parsed.contentDelta().isBlank()) {
+                            contentBuilder.append(parsed.contentDelta());
+                        }
                     }
                 }
 
