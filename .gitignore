@@ -24,6 +24,7 @@ data/
 
 # Node
 node_modules/
+package-lock.json
 frontend/dist/
 
 # Frontend build output
